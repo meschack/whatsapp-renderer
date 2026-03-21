@@ -1,53 +1,66 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
+// WhatsApp Dark Mode color palette
+export const COLORS = {
+  // Backgrounds
+  background: '#0B141A',
+  chatBackground: '#0B141A',
+  headerBackground: '#1F2C34',
+  inputBackground: '#1F2C34',
 
-import { Platform } from 'react-native';
+  // Bubbles
+  bubbleMine: '#005C4B',
+  bubbleOther: '#1F2C34',
+  bubbleSystem: 'transparent',
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+  // Text
+  textPrimary: '#E9EDEF',
+  textSecondary: '#8696A0',
+  textSender: '#06CF9C',
+  textTimestamp: '#8696A0',
+  textTimestampMine: 'rgba(255, 255, 255, 0.6)',
+  textSystem: '#8696A0',
 
-export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
-};
+  // Accents
+  accent: '#00A884',
+  accentLight: '#06CF9C',
+  iconColor: '#8696A0',
+  divider: '#222D34',
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+  // Status
+  checkmark: '#53BDEB',
+
+  // Media
+  audioWaveform: '#8696A0',
+  audioWaveformActive: '#06CF9C',
+  audioBackground: 'rgba(0, 0, 0, 0.15)',
+
+  // Misc
+  white: '#FFFFFF',
+  black: '#000000',
+  overlay: 'rgba(0, 0, 0, 0.5)'
+}
+
+export const SPACING = {
+  xs: 2,
+  sm: 4,
+  md: 8,
+  lg: 12,
+  xl: 16,
+  xxl: 24
+}
+
+export const FONT_SIZE = {
+  xs: 11,
+  sm: 12,
+  md: 14,
+  lg: 16,
+  xl: 18,
+  xxl: 22
+}
+
+export const BORDER_RADIUS = {
+  sm: 4,
+  md: 8,
+  lg: 12,
+  xl: 16,
+  bubble: 8
+}

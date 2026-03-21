@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Read(//tmp/expo55-check/**)",
+      "Bash(pnpm info:*)",
+      "Bash(pnpm remove:*)",
+      "Read(//home/imgodwin/.claude/plugins/cache/expo-plugins/upgrading-expo/1.0.0/skills/upgrading-expo/references/**)",
+      "Bash(npx eslint:*)"
+    ]
+  }
+}

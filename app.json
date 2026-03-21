@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "whatsapprenderer",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -38,7 +37,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,
