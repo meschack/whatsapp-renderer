@@ -1,6 +1,7 @@
-import { useCallback, useRef, useMemo } from 'react'
-import { FlatList, ImageBackground } from 'react-native'
-import { View } from '@/src/tw'
+import { useCallback, useRef, useMemo, useState } from 'react'
+import { FlatList, ImageBackground, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native'
+import { View, Pressable } from '@/src/tw'
+import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useChatStore } from '@/store/chatStore'
 import { ChatHeader } from '@/components/chat/ChatHeader'
@@ -28,10 +29,13 @@ function formatDateLabel(date: Date): string {
   })
 }
 
+const SCROLL_THRESHOLD = 300
+
 export default function ChatScreen() {
   const { chatData } = useChatStore()
   const insets = useSafeAreaInsets()
   const flatListRef = useRef<FlatList>(null)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
   const listItems = useMemo(() => {
     if (!chatData) return []
@@ -43,7 +47,6 @@ export default function ChatScreen() {
     for (const msg of chatData.messages) {
       const dateStr = msg.timestamp.toDateString()
 
-      // Add date separator
       if (dateStr !== lastDateStr) {
         items.push({
           type: 'date',
@@ -54,7 +57,6 @@ export default function ChatScreen() {
         lastSender = null
       }
 
-      // Show sender name when sender changes (for group chats)
       const showSender = msg.sender !== lastSender && !msg.isSystem
 
       if (msg.isSystem) {
@@ -92,6 +94,19 @@ export default function ChatScreen() {
 
   const keyExtractor = useCallback((item: ListItem) => item.id, [])
 
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent
+      const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y
+      setShowScrollToBottom(distanceFromBottom > SCROLL_THRESHOLD)
+    },
+    []
+  )
+
+  const scrollToBottom = useCallback(() => {
+    flatListRef.current?.scrollToEnd({ animated: true })
+  }, [])
+
   if (!chatData) {
     return <View className='flex-1 bg-wa-bg' />
   }
@@ -118,8 +133,27 @@ export default function ChatScreen() {
           maxToRenderPerBatch={20}
           windowSize={15}
           removeClippedSubviews
-          getItemLayout={undefined}
+          onScroll={handleScroll}
+          scrollEventThrottle={100}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
+
+        {showScrollToBottom && (
+          <Pressable
+            className='absolute bottom-5 right-4 h-10 w-10 items-center justify-center rounded-full bg-wa-header'
+            style={{
+              elevation: 4,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.3,
+              shadowRadius: 3
+            }}
+            onPress={scrollToBottom}
+          >
+            <Ionicons name='chevron-down' size={22} color='#8696A0' />
+          </Pressable>
+        )}
       </ImageBackground>
     </View>
   )

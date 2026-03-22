@@ -1,6 +1,11 @@
 import { View, Text } from '@/src/tw'
 import { MediaMessage } from './MediaMessage'
+import { RichText, extractFirstUrl } from './RichText'
+import { LinkPreview } from './LinkPreview'
 import type { Message } from '@/models/types'
+import { useMemo, useState, useCallback } from 'react'
+
+const MAX_CHARS = 500
 
 interface ChatBubbleProps {
   message: Message
@@ -19,6 +24,21 @@ export function ChatBubble({ message, showSender }: ChatBubbleProps) {
   const isMine = message.isMine
   const hasMedia = message.mediaType !== null
   const hasText = message.text !== null && message.text.trim().length > 0
+  const [expanded, setExpanded] = useState(false)
+
+  const isTruncatable = hasText && message.text!.length > MAX_CHARS
+  const displayText = useMemo(() => {
+    if (!hasText || !message.text) return null
+    if (!isTruncatable || expanded) return message.text
+    return message.text.slice(0, MAX_CHARS).trimEnd() + '...'
+  }, [hasText, message.text, isTruncatable, expanded])
+
+  const toggleExpanded = useCallback(() => setExpanded(prev => !prev), [])
+
+  const firstUrl = useMemo(
+    () => (hasText && message.text ? extractFirstUrl(message.text) : null),
+    [hasText, message.text]
+  )
 
   return (
     <View className={`px-3 py-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
@@ -37,19 +57,41 @@ export function ChatBubble({ message, showSender }: ChatBubbleProps) {
         {/* Media content */}
         {hasMedia && <MediaMessage message={message} />}
 
+        {/* Link preview */}
+        {firstUrl && <LinkPreview url={firstUrl} isMine={isMine} />}
+
         {/* Text content + timestamp row */}
-        {hasText ? (
-          <View className='flex-row flex-wrap items-end'>
-            <Text className='text-wa-text-primary text-[14.5px] leading-5 flex-shrink'>
-              {message.text}
-            </Text>
-            <Text
-              className={`text-[11px] ml-2 mt-0.5 ${
-                isMine ? 'text-white/60' : 'text-wa-text-timestamp'
-              }`}
-            >
-              {formatTime(message.timestamp)}
-            </Text>
+        {hasText && displayText ? (
+          <View>
+            <View className='flex-row flex-wrap items-end'>
+              <RichText text={displayText} isMine={isMine} />
+              {!isTruncatable && (
+                <Text
+                  className={`text-[11px] ml-2 mt-0.5 ${
+                    isMine ? 'text-white/60' : 'text-wa-text-timestamp'
+                  }`}
+                >
+                  {formatTime(message.timestamp)}
+                </Text>
+              )}
+            </View>
+            {isTruncatable && (
+              <View className='flex-row flex-wrap items-end'>
+                <Text
+                  className='text-wa-checkmark text-[13px] font-medium mt-1'
+                  onPress={toggleExpanded}
+                >
+                  {expanded ? 'See less' : 'See more'}
+                </Text>
+                <Text
+                  className={`text-[11px] ml-auto mt-0.5 ${
+                    isMine ? 'text-white/60' : 'text-wa-text-timestamp'
+                  }`}
+                >
+                  {formatTime(message.timestamp)}
+                </Text>
+              </View>
+            )}
           </View>
         ) : (
           <View className='items-end mt-0.5'>

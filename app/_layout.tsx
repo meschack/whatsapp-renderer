@@ -1,10 +1,10 @@
-import '@/src/global.css'
-import { ChatContext, ChatData } from '@/store/chatStore'
-import { getAllSavedChats } from '@/store/chatDatabase'
 import type { SavedChat } from '@/models/types'
+import '@/src/global.css'
+import { getAllSavedChats } from '@/store/chatDatabase'
+import { ChatContext, ChatData } from '@/store/chatStore'
 import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 export default function RootLayout() {
   const [chatData, setChatData] = useState<ChatData | null>(null)
