@@ -1,11 +1,12 @@
-import { memo, useState, useCallback } from 'react'
-import { Modal } from 'react-native'
-import { Ionicons } from '@expo/vector-icons'
-import { useVideoPlayer, VideoView } from 'expo-video'
-import { View, Text, Pressable } from '@/src/tw'
-import { Image } from '@/src/tw/image'
-import { AudioPlayer } from './AudioPlayer'
 import type { Message } from '@/models/types'
+import { Pressable, Text, View } from '@/src/tw'
+import { Image } from '@/src/tw/image'
+import { Ionicons } from '@expo/vector-icons'
+import type { ImageLoadEventData } from 'expo-image'
+import { useVideoPlayer, VideoView } from 'expo-video'
+import { memo, useCallback, useState } from 'react'
+import { Modal, useWindowDimensions } from 'react-native'
+import { AudioPlayer } from './AudioPlayer'
 
 interface MediaMessageProps {
   message: Message
@@ -24,7 +25,9 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
           size={20}
           color={message.isMine ? '#E9EDEF' : '#8696A0'}
         />
-        <Text className={`text-sm italic ${message.isMine ? 'text-white/70' : 'text-wa-text-secondary'}`}>
+        <Text
+          className={`text-sm italic ${message.isMine ? 'text-white/70' : 'text-wa-text-secondary'}`}
+        >
           {getMediaLabel(message.mediaType)}
         </Text>
       </View>
@@ -32,24 +35,19 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
   }
 
   switch (message.mediaType) {
-    case 'image':
+    case 'image': {
+      if (message.mediaUri.toUpperCase().includes('STICKER')) {
+        return <Sticker uri={message.mediaUri} />
+      }
       return (
-        <>
-          <Pressable onPress={() => setImageModalVisible(true)}>
-            <Image className='w-[250px] h-[250px] rounded-lg object-cover' source={{ uri: message.mediaUri }} />
-          </Pressable>
-          {imageModalVisible && (
-            <Modal visible transparent animationType='fade' onRequestClose={() => setImageModalVisible(false)}>
-              <Pressable
-                style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}
-                onPress={() => setImageModalVisible(false)}
-              >
-                <Image className='w-full h-[80%] object-contain' source={{ uri: message.mediaUri }} />
-              </Pressable>
-            </Modal>
-          )}
-        </>
+        <ChatImage
+          uri={message.mediaUri}
+          isModalVisible={imageModalVisible}
+          onOpenModal={() => setImageModalVisible(true)}
+          onCloseModal={() => setImageModalVisible(false)}
+        />
       )
+    }
 
     case 'video':
       return <LazyVideoMessage uri={message.mediaUri} />
@@ -65,17 +63,100 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
   }
 })
 
+const IMAGE_MAX_WIDTH = 250
+const IMAGE_MIN_HEIGHT = 100
+const IMAGE_MAX_HEIGHT = 350
+
+const STICKER_SIZE = IMAGE_MAX_WIDTH / 2
+
+const Sticker = memo(function Sticker({ uri }: { uri: string }) {
+  const [height, setHeight] = useState(STICKER_SIZE)
+
+  const handleLoad = useCallback((e: ImageLoadEventData) => {
+    const { width: srcW, height: srcH } = e.source
+    if (srcW > 0 && srcH > 0) {
+      setHeight(Math.round(STICKER_SIZE * (srcH / srcW)))
+    }
+  }, [])
+
+  return (
+    <Image
+      source={{ uri }}
+      className='object-contain'
+      style={{ width: STICKER_SIZE, height }}
+      onLoad={handleLoad}
+    />
+  )
+})
+
+interface ChatImageProps {
+  uri: string
+  isModalVisible: boolean
+  onOpenModal: () => void
+  onCloseModal: () => void
+}
+
+const ChatImage = memo(function ChatImage({
+  uri,
+  isModalVisible,
+  onOpenModal,
+  onCloseModal
+}: ChatImageProps) {
+  const [imageHeight, setImageHeight] = useState(IMAGE_MAX_WIDTH)
+  const { width: screenWidth } = useWindowDimensions()
+
+  const handleLoad = useCallback((e: ImageLoadEventData) => {
+    const { width: srcW, height: srcH } = e.source
+    if (srcW > 0 && srcH > 0) {
+      const computed = Math.round(IMAGE_MAX_WIDTH * (srcH / srcW))
+      setImageHeight(Math.max(IMAGE_MIN_HEIGHT, Math.min(IMAGE_MAX_HEIGHT, computed)))
+    }
+  }, [])
+
+  return (
+    <>
+      <Pressable onPress={onOpenModal}>
+        <Image
+          source={{ uri }}
+          className='rounded-lg object-cover'
+          style={{ width: IMAGE_MAX_WIDTH, height: imageHeight }}
+          onLoad={handleLoad}
+        />
+      </Pressable>
+      {isModalVisible && (
+        <Modal visible transparent animationType='fade' onRequestClose={onCloseModal}>
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.95)',
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}
+            onPress={onCloseModal}
+          >
+            <Image
+              source={{ uri }}
+              className='object-contain'
+              style={{ width: screenWidth, height: '80%' }}
+            />
+          </Pressable>
+        </Modal>
+      )}
+    </>
+  )
+})
+
 const DocumentMessage = memo(function DocumentMessage({ uri }: { uri: string }) {
   return (
-    <View className='flex-row items-center gap-3 py-2 px-1'>
-      <View className='w-10 h-10 rounded-lg bg-wa-accent/20 justify-center items-center'>
+    <View className='flex-row items-center gap-3 px-1 py-2'>
+      <View className='bg-wa-accent/20 h-10 w-10 items-center justify-center rounded-lg'>
         <Ionicons name='document' size={22} color='#00A884' />
       </View>
       <View className='flex-1'>
-        <Text className='text-sm text-wa-text-primary' numberOfLines={1}>
+        <Text className='text-wa-text-primary text-sm' numberOfLines={1}>
           {uri.split('/').pop() ?? 'Document'}
         </Text>
-        <Text className='text-[11px] text-wa-text-secondary'>Document</Text>
+        <Text className='text-wa-text-secondary text-[11px]'>Document</Text>
       </View>
     </View>
   )
@@ -88,10 +169,10 @@ const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }
   if (!activated) {
     return (
       <Pressable
-        className='w-[250px] h-[250px] rounded-lg overflow-hidden bg-black/50 justify-center items-center'
+        className='h-[250px] w-[250px] items-center justify-center overflow-hidden rounded-lg bg-black/50'
         onPress={() => setActivated(true)}
       >
-        <View className='w-14 h-14 rounded-full bg-white/20 justify-center items-center'>
+        <View className='h-14 w-14 items-center justify-center rounded-full bg-white/20'>
           <Ionicons name='play' size={32} color='#FFFFFF' />
         </View>
       </Pressable>
@@ -109,28 +190,43 @@ function ActiveVideoPlayer({ uri }: { uri: string }) {
   }, [player])
 
   return (
-    <View className='w-[250px] h-[250px] rounded-lg overflow-hidden' onLayout={handleLayout}>
-      <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit='cover' nativeControls />
+    <View className='h-[250px] w-[250px] overflow-hidden rounded-lg' onLayout={handleLayout}>
+      <VideoView
+        player={player}
+        style={{ width: '100%', height: '100%' }}
+        contentFit='cover'
+        nativeControls
+      />
     </View>
   )
 }
 
 function getMediaIcon(type: Message['mediaType']): keyof typeof Ionicons.glyphMap {
   switch (type) {
-    case 'image': return 'image'
-    case 'video': return 'videocam'
-    case 'audio': return 'mic'
-    case 'document': return 'document'
-    default: return 'attach'
+    case 'image':
+      return 'image'
+    case 'video':
+      return 'videocam'
+    case 'audio':
+      return 'mic'
+    case 'document':
+      return 'document'
+    default:
+      return 'attach'
   }
 }
 
 function getMediaLabel(type: Message['mediaType']): string {
   switch (type) {
-    case 'image': return 'Photo'
-    case 'video': return 'Video'
-    case 'audio': return 'Voice message'
-    case 'document': return 'Document'
-    default: return 'Media'
+    case 'image':
+      return 'Photo'
+    case 'video':
+      return 'Video'
+    case 'audio':
+      return 'Voice message'
+    case 'document':
+      return 'Document'
+    default:
+      return 'Media'
   }
 }

@@ -1,6 +1,7 @@
-import { useCallback, useRef, useMemo, useState } from 'react'
-import { FlatList, ImageBackground, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native'
-import { View, Pressable } from '@/src/tw'
+import { useCallback, useRef, useState } from 'react'
+import { ImageBackground, type NativeSyntheticEvent, type NativeScrollEvent, ActivityIndicator } from 'react-native'
+import { FlashList, type FlashListRef } from '@shopify/flash-list'
+import { View, Pressable, Text } from '@/src/tw'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useChatStore } from '@/store/chatStore'
@@ -8,80 +9,21 @@ import { ChatHeader } from '@/components/chat/ChatHeader'
 import { ChatBubble } from '@/components/chat/ChatBubble'
 import { SystemMessage } from '@/components/chat/SystemMessage'
 import { DateSeparator } from '@/components/chat/DateSeparator'
-import type { Message } from '@/models/types'
-
-type ListItem =
-  | { type: 'date'; id: string; date: string }
-  | { type: 'message'; id: string; message: Message; showSender: boolean }
-
-function formatDateLabel(date: Date): string {
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  if (date.toDateString() === today.toDateString()) return 'Today'
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
-
-  return date.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  })
-}
+import { useMessagePages, type ListItem } from '@/hooks/useMessagePages'
 
 const SCROLL_THRESHOLD = 300
 
 export default function ChatScreen() {
   const { chatData } = useChatStore()
   const insets = useSafeAreaInsets()
-  const flatListRef = useRef<FlatList>(null)
+  const flashListRef = useRef<FlashListRef<ListItem>>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
-  // Track last value to avoid redundant setState calls
   const lastScrollState = useRef(false)
 
-  const listItems = useMemo(() => {
-    if (!chatData) return []
-
-    const items: ListItem[] = []
-    let lastDateStr = ''
-    let lastSender: string | null = null
-
-    for (const msg of chatData.messages) {
-      const dateStr = msg.timestamp.toDateString()
-
-      if (dateStr !== lastDateStr) {
-        items.push({
-          type: 'date',
-          id: `date-${dateStr}`,
-          date: formatDateLabel(msg.timestamp)
-        })
-        lastDateStr = dateStr
-        lastSender = null
-      }
-
-      const showSender = msg.sender !== lastSender && !msg.isSystem
-
-      if (msg.isSystem) {
-        items.push({
-          type: 'message',
-          id: msg.id,
-          message: msg,
-          showSender: false
-        })
-      } else {
-        items.push({
-          type: 'message',
-          id: msg.id,
-          message: msg,
-          showSender
-        })
-        lastSender = msg.sender
-      }
-    }
-
-    // Reverse for inverted FlatList — latest messages render first at the bottom
-    return items.reverse()
-  }, [chatData])
+  const { items, loadMore, hasMore, isLoadingMore } = useMessagePages(
+    chatData?.chatId ?? '',
+    chatData?.messageCount ?? 0
+  )
 
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     if (item.type === 'date') {
@@ -97,10 +39,16 @@ export default function ChatScreen() {
 
   const keyExtractor = useCallback((item: ListItem) => item.id, [])
 
+  const getItemType = useCallback((item: ListItem) => {
+    if (item.type === 'date') return 'date'
+    if (item.message.isSystem) return 'system'
+    if (item.message.mediaType) return 'media'
+    return 'text'
+  }, [])
+
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const shouldShow = e.nativeEvent.contentOffset.y > SCROLL_THRESHOLD
-      // Only call setState when the value actually changes
       if (shouldShow !== lastScrollState.current) {
         lastScrollState.current = shouldShow
         setShowScrollButton(shouldShow)
@@ -110,8 +58,14 @@ export default function ChatScreen() {
   )
 
   const scrollToBottom = useCallback(() => {
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: true })
+    flashListRef.current?.scrollToOffset({ offset: 0, animated: true })
   }, [])
+
+  const handleEndReached = useCallback(() => {
+    if (hasMore && !isLoadingMore) {
+      loadMore()
+    }
+  }, [hasMore, isLoadingMore, loadMore])
 
   if (!chatData) {
     return <View className='flex-1 bg-wa-bg' />
@@ -129,19 +83,25 @@ export default function ChatScreen() {
         style={{ flex: 1 }}
         resizeMode='cover'
       >
-        <FlatList
-          ref={flatListRef}
-          data={listItems}
+        <FlashList
+          ref={flashListRef}
+          data={items}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
+          getItemType={getItemType}
           inverted
           contentContainerStyle={{ paddingTop: insets.bottom + 16, paddingBottom: 8 }}
-          initialNumToRender={20}
-          maxToRenderPerBatch={15}
-          windowSize={11}
-          removeClippedSubviews
           onScroll={handleScroll}
           scrollEventThrottle={400}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View className='py-4 items-center'>
+                <ActivityIndicator size='small' color='#00A884' />
+              </View>
+            ) : null
+          }
         />
 
         {showScrollButton && (

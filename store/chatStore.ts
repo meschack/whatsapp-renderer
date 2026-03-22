@@ -1,12 +1,13 @@
 import { createContext, useContext } from 'react'
-import type { Message, SavedChat } from '@/models/types'
+import type { SavedChat } from '@/models/types'
 
 export interface ChatData {
-  messages: Message[]
+  chatId: string
   participants: string[]
   chatName: string
   myName: string
   extractDirUri: string
+  messageCount: number
 }
 
 export interface ChatStore {

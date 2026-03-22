@@ -1,5 +1,6 @@
 import { useChatStore } from '@/store/chatStore'
 import { saveChatMetadata } from '@/store/chatDatabase'
+import { updateIsMine, getLastMessage } from '@/store/messageDatabase'
 import { View, Text, Pressable } from '@/src/tw'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
@@ -18,36 +19,28 @@ export default function SelectSenderScreen() {
   }
 
   const handleSelect = (name: string) => {
-    const updatedMessages = chatData.messages.map(msg => ({
-      ...msg,
-      isMine: msg.sender === name
-    }))
+    // Update isMine flag in SQLite with a single UPDATE query
+    updateIsMine(chatData.chatId, name)
 
     const updatedChatData = {
       ...chatData,
-      myName: name,
-      messages: updatedMessages
+      myName: name
     }
 
     setChatData(updatedChatData)
 
-    // Persist chat metadata
-    const nonSystemMessages = updatedMessages.filter(m => !m.isSystem)
-    const lastMsg = nonSystemMessages[nonSystemMessages.length - 1]
-
-    // Extract ID from extractDirUri (the chat-{timestamp} folder name)
-    const dirParts = chatData.extractDirUri.replace(/\/$/, '').split('/')
-    const chatId = dirParts[dirParts.length - 1]
+    // Get last message info from SQLite for metadata
+    const lastMsg = getLastMessage(chatData.chatId)
 
     saveChatMetadata({
-      id: chatId,
+      id: chatData.chatId,
       chatName: chatData.chatName,
       myName: name,
       participants: chatData.participants,
       extractDirUri: chatData.extractDirUri,
-      messageCount: nonSystemMessages.length,
+      messageCount: chatData.messageCount,
       lastMessageText: lastMsg?.text ?? null,
-      lastMessageTime: lastMsg?.timestamp.toISOString() ?? new Date().toISOString(),
+      lastMessageTime: lastMsg ? new Date(lastMsg.timestamp).toISOString() : new Date().toISOString(),
       importedAt: new Date().toISOString()
     })
 

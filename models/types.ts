@@ -9,12 +9,6 @@ export interface Message {
   isSystem: boolean
 }
 
-export interface ParsedChat {
-  participants: string[]
-  messages: Message[]
-  chatName: string
-}
-
 export type MediaMap = Map<string, string>
 
 export interface SavedChat {

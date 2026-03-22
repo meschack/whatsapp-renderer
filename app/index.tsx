@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/src/tw'
 import { useChatStore } from '@/store/chatStore'
 import { deleteSavedChat, deleteAllSavedChats } from '@/store/chatDatabase'
+import { hasMessages, deleteMessages, getMessageCount, getParticipants } from '@/store/messageDatabase'
 import { cleanupExtractedChat, extractZip } from '@/utils/zipExtractor'
 import { scanForMedia, findChatFile } from '@/utils/fileScanner'
 import { parseChat } from '@/utils/parser'
@@ -53,6 +54,9 @@ export default function HomeScreen() {
       setStatusText('Extracting zip file...')
       const extractDirUri = await extractZip(pickedFile.uri)
 
+      // Generate chatId from the extract directory name
+      const chatId = extractDirUri.split('/').filter(Boolean).pop() ?? `chat-${Date.now()}`
+
       setStatusText('Scanning for media files...')
       const mediaMap = scanForMedia(extractDirUri)
 
@@ -67,20 +71,21 @@ export default function HomeScreen() {
       const chatFile = new File(chatFileUri)
       const chatContent = await chatFile.text()
 
-      const { messages, participants } = parseChat(chatContent, mediaMap)
+      const { participants, messageCount } = parseChat(chatContent, mediaMap, chatId)
 
-      if (messages.length === 0) {
+      if (messageCount === 0) {
         throw new Error('No messages found in the chat file.')
       }
 
       const chatName = pickedFile.name?.replace('.zip', '').replace('WhatsApp Chat - ', '') ?? 'Chat'
 
       setChatData({
-        messages,
+        chatId,
         participants,
         chatName,
         myName: '',
-        extractDirUri
+        extractDirUri,
+        messageCount
       })
 
       setStatusText('')
@@ -105,29 +110,38 @@ export default function HomeScreen() {
         // Verify directory still exists
         const dir = new Directory(chat.extractDirUri)
         if (!dir.exists) {
+          deleteMessages(chat.id)
           deleteSavedChat(chat.id)
           refreshSavedChats()
           throw new Error('Chat data was deleted from device. Removing from list.')
         }
 
-        const mediaMap = scanForMedia(chat.extractDirUri)
+        // Check if messages are already in SQLite
+        if (!hasMessages(chat.id)) {
+          // Legacy migration: re-parse and insert into SQLite
+          setStatusText('Migrating chat data...')
+          const mediaMap = scanForMedia(chat.extractDirUri)
+          const chatFileUri = findChatFile(chat.extractDirUri)
 
-        const chatFileUri = findChatFile(chat.extractDirUri)
+          if (!chatFileUri) {
+            throw new Error('Chat file no longer found on disk.')
+          }
 
-        if (!chatFileUri) {
-          throw new Error('Chat file no longer found on disk.')
+          const chatFile = new File(chatFileUri)
+          const chatContent = await chatFile.text()
+          parseChat(chatContent, mediaMap, chat.id, chat.myName)
         }
 
-        const chatFile = new File(chatFileUri)
-        const chatContent = await chatFile.text()
-        const { messages, participants } = parseChat(chatContent, mediaMap, chat.myName)
+        const messageCount = getMessageCount(chat.id)
+        const participants = getParticipants(chat.id)
 
         setChatData({
-          messages,
+          chatId: chat.id,
           participants,
           chatName: chat.chatName,
           myName: chat.myName,
-          extractDirUri: chat.extractDirUri
+          extractDirUri: chat.extractDirUri,
+          messageCount
         })
 
         setStatusText('')
@@ -153,6 +167,7 @@ export default function HomeScreen() {
           style: 'destructive',
           onPress: () => {
             cleanupExtractedChat(chat.extractDirUri)
+            deleteMessages(chat.id)
             deleteSavedChat(chat.id)
             refreshSavedChats()
           }
@@ -174,6 +189,7 @@ export default function HomeScreen() {
           onPress: () => {
             for (const chat of savedChats) {
               cleanupExtractedChat(chat.extractDirUri)
+              deleteMessages(chat.id)
             }
             deleteAllSavedChats()
             refreshSavedChats()

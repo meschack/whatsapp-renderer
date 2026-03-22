@@ -1,4 +1,5 @@
-import { Message, MediaMap } from "@/models/types";
+import type { Message, MediaMap } from "@/models/types";
+import { insertMessageBatch } from "@/store/messageDatabase";
 
 // Matches lines like: [12/02/2024, 21:33:10] Sender: message
 // or [4/13/2025, 5:29:01 PM] Sender: message
@@ -38,41 +39,38 @@ const MEDIA_EXTENSIONS: Record<string, Message["mediaType"]> = {
   vcf: "document",
 };
 
+// Regex to extract candidate media filenames from message text
+// Matches patterns like IMG-20240102-WA0001.jpg, VID-xxx.mp4, PTT-xxx.opus, DOC-xxx.pdf, etc.
+// Also matches any word containing a media extension
+const MEDIA_FILENAME_REGEX =
+  /\b[\w\-]+\.(?:jpg|jpeg|png|gif|webp|mp4|mkv|avi|mov|3gp|opus|mp3|m4a|ogg|aac|pdf|doc|docx|xls|xlsx|ppt|pptx|vcf|zip)\b/gi;
+
 function parseTimestamp(dateStr: string, timeStr: string): Date {
-  // dateStr: "12/02/2024" or "4/13/2025"
-  // timeStr: "21:33:10" or "5:29:01 PM"
   const dateParts = dateStr.split("/");
   let month: number, day: number, year: number;
 
-  // Try to determine format - WhatsApp uses MM/DD/YYYY or DD/MM/YYYY
-  // We'll try MM/DD/YYYY first (common in many locales)
   const p0 = parseInt(dateParts[0], 10);
   const p1 = parseInt(dateParts[1], 10);
   let p2 = parseInt(dateParts[2], 10);
 
-  // If year is 2 digits, expand it
   if (p2 < 100) {
     p2 += 2000;
   }
 
-  // Heuristic: if first part > 12, it must be day (DD/MM/YYYY)
   if (p0 > 12) {
     day = p0;
     month = p1;
     year = p2;
   } else if (p1 > 12) {
-    // Second part > 12, it must be day (MM/DD/YYYY)
     month = p0;
     day = p1;
     year = p2;
   } else {
-    // Ambiguous - default to MM/DD/YYYY
     month = p0;
     day = p1;
     year = p2;
   }
 
-  // Parse time
   let timePart = timeStr.trim();
   let hours: number, minutes: number, seconds: number = 0;
 
@@ -96,9 +94,16 @@ function parseTimestamp(dateStr: string, timeStr: string): Date {
 function detectMediaInText(
   text: string,
   mediaMap: MediaMap
-): { mediaType: Message["mediaType"]; mediaUri: string | null; cleanText: string | null } {
+): {
+  mediaType: Message["mediaType"];
+  mediaUri: string | null;
+  cleanText: string | null;
+} {
   // Strip invisible Unicode chars from the text for matching
-  const stripped = text.replace(/[\u200e\u200f\u200b\u200c\u200d\ufeff\u202a-\u202e\u2066-\u2069]/g, "");
+  const stripped = text.replace(
+    /[\u200e\u200f\u200b\u200c\u200d\ufeff\u202a-\u202e\u2066-\u2069]/g,
+    ""
+  );
 
   if (stripped.trim() === MEDIA_OMITTED) {
     return { mediaType: "image", mediaUri: null, cleanText: null };
@@ -130,22 +135,29 @@ function detectMediaInText(
     if (mediaMap.has(filename)) {
       const ext = filename.split(".").pop()?.toLowerCase() ?? "";
       const mediaType = MEDIA_EXTENSIONS[ext] ?? "document";
-      return { mediaType, mediaUri: mediaMap.get(filename)!, cleanText: null };
+      return {
+        mediaType,
+        mediaUri: mediaMap.get(filename)!,
+        cleanText: null,
+      };
     }
-    // Even without a match in mediaMap, detect by extension
     const ext = filename.split(".").pop()?.toLowerCase() ?? "";
     if (MEDIA_EXTENSIONS[ext]) {
       return { mediaType: MEDIA_EXTENSIONS[ext]!, mediaUri: null, cleanText: null };
     }
   }
 
-  // Check if any known media filename appears in the text
-  for (const [filename, uri] of mediaMap.entries()) {
-    if (trimmed.includes(filename)) {
-      const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-      const mediaType = MEDIA_EXTENSIONS[ext] ?? "document";
-      const cleanText = trimmed.replace(filename, "").trim() || null;
-      return { mediaType, mediaUri: uri, cleanText };
+  // O(k) candidate extraction instead of O(n) mediaMap iteration
+  // Extract candidate filenames via regex, then do O(1) Map lookups
+  const candidates = trimmed.match(MEDIA_FILENAME_REGEX);
+  if (candidates) {
+    for (const candidate of candidates) {
+      if (mediaMap.has(candidate)) {
+        const ext = candidate.split(".").pop()?.toLowerCase() ?? "";
+        const mediaType = MEDIA_EXTENSIONS[ext] ?? "document";
+        const cleanText = trimmed.replace(candidate, "").trim() || null;
+        return { mediaType, mediaUri: mediaMap.get(candidate)!, cleanText };
+      }
     }
   }
 
@@ -179,12 +191,21 @@ function isSystemMessage(sender: string | null, text: string): boolean {
   return SYSTEM_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const BATCH_SIZE = 500;
+
+/**
+ * Parse a WhatsApp chat export and insert messages into SQLite in batches.
+ * Returns only metadata — messages live in the database.
+ */
 export function parseChat(
   content: string,
   mediaMap: MediaMap,
+  chatId: string,
   myName?: string
-): { messages: Message[]; participants: string[] } {
+): { participants: string[]; messageCount: number } {
   const lines = content.split("\n");
+
+  // First pass: collect raw messages and participants
   const rawMessages: {
     date: string;
     time: string;
@@ -198,7 +219,6 @@ export function parseChat(
     const startMatch = line.match(MESSAGE_START_REGEX);
 
     if (startMatch) {
-      // Save previous message
       if (current) {
         rawMessages.push(current);
       }
@@ -217,7 +237,6 @@ export function parseChat(
           text: senderMatch[2],
         };
       } else {
-        // System message (no sender)
         current = {
           date,
           time,
@@ -226,12 +245,10 @@ export function parseChat(
         };
       }
     } else if (current) {
-      // Continuation of previous message
       current.text += "\n" + line;
     }
   }
 
-  // Don't forget the last message
   if (current) {
     rawMessages.push(current);
   }
@@ -245,21 +262,16 @@ export function parseChat(
   }
   const participants = Array.from(participantSet);
 
-  // Determine "my" name - the user who exported the chat
-  // If myName isn't provided, use heuristic: "You" messages or the most frequent sender
+  // Determine "my" name
   let detectedMyName = myName ?? null;
 
   if (!detectedMyName && participants.length === 2) {
-    // In 1-on-1 chats, we can't easily tell. We'll mark the first participant as "other"
-    // Actually in WhatsApp exports, "You" is sometimes used, or we take the second participant
-    // We'll let the user pick, but default to the sender with most messages
     const counts = new Map<string, number>();
     for (const msg of rawMessages) {
       if (msg.sender) {
         counts.set(msg.sender, (counts.get(msg.sender) ?? 0) + 1);
       }
     }
-    // Most frequent sender is likely "me"
     let maxCount = 0;
     for (const [name, count] of counts) {
       if (count > maxCount) {
@@ -269,8 +281,12 @@ export function parseChat(
     }
   }
 
-  // Convert to Message objects
-  const messages: Message[] = rawMessages.map((raw, index) => {
+  // Convert to Message objects and insert in batches
+  let batch: Message[] = [];
+  let totalCount = 0;
+
+  for (let i = 0; i < rawMessages.length; i++) {
+    const raw = rawMessages[i];
     const timestamp = parseTimestamp(raw.date, raw.time);
     const { mediaType, mediaUri, cleanText } = detectMediaInText(
       raw.text,
@@ -278,8 +294,8 @@ export function parseChat(
     );
     const system = isSystemMessage(raw.sender, raw.text);
 
-    return {
-      id: `msg-${index}`,
+    batch.push({
+      id: `msg-${i}`,
       sender: raw.sender,
       text: cleanText,
       mediaType,
@@ -287,8 +303,20 @@ export function parseChat(
       timestamp,
       isMine: raw.sender === detectedMyName,
       isSystem: system && !raw.sender,
-    };
-  });
+    });
 
-  return { messages, participants };
+    if (batch.length >= BATCH_SIZE) {
+      insertMessageBatch(chatId, batch);
+      totalCount += batch.length;
+      batch = [];
+    }
+  }
+
+  // Flush remaining
+  if (batch.length > 0) {
+    insertMessageBatch(chatId, batch);
+    totalCount += batch.length;
+  }
+
+  return { participants, messageCount: totalCount };
 }
