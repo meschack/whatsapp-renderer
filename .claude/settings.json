@@ -36,7 +36,9 @@
       "Read(//home/imgodwin/Documents/workflow/personal-projects/whatsapp-renderer/**)",
       "Bash(xargs kill:*)",
       "Bash(unset ANDROID_NDK_HOME)",
-      "Bash(pkill -f \"expo start\")"
+      "Bash(pkill -f \"expo start\")",
+      "Bash(npx npm:*)",
+      "Bash(pnpm list:*)"
     ],
     "additionalDirectories": [
       "/home/imgodwin/Android/Sdk/ndk/27.1.12297006"

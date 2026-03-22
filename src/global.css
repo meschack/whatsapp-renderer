@@ -2,27 +2,25 @@
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css";
 
-@layer theme {
-  @theme {
-    /* WhatsApp Dark Mode Colors */
-    --color-wa-bg: #0B141A;
-    --color-wa-header: #1F2C34;
-    --color-wa-input: #1F2C34;
-    --color-wa-bubble-mine: #005C4B;
-    --color-wa-bubble-other: #1F2C34;
-    --color-wa-text-primary: #E9EDEF;
-    --color-wa-text-secondary: #8696A0;
-    --color-wa-text-sender: #06CF9C;
-    --color-wa-text-timestamp: #8696A0;
-    --color-wa-accent: #00A884;
-    --color-wa-accent-light: #06CF9C;
-    --color-wa-icon: #8696A0;
-    --color-wa-divider: #222D34;
-    --color-wa-checkmark: #53BDEB;
-    --color-wa-waveform: #8696A0;
-    --color-wa-waveform-active: #06CF9C;
-    --color-wa-error: #FF6B6B;
-  }
+@theme {
+  /* WhatsApp Dark Mode Colors */
+  --color-wa-bg: #0B141A;
+  --color-wa-header: #1F2C34;
+  --color-wa-input: #1F2C34;
+  --color-wa-bubble-mine: #005C4B;
+  --color-wa-bubble-other: #1F2C34;
+  --color-wa-text-primary: #E9EDEF;
+  --color-wa-text-secondary: #8696A0;
+  --color-wa-text-sender: #06CF9C;
+  --color-wa-text-timestamp: #8696A0;
+  --color-wa-accent: #00A884;
+  --color-wa-accent-light: #06CF9C;
+  --color-wa-icon: #8696A0;
+  --color-wa-divider: #222D34;
+  --color-wa-checkmark: #53BDEB;
+  --color-wa-waveform: #8696A0;
+  --color-wa-waveform-active: #06CF9C;
+  --color-wa-error: #FF6B6B;
 }
 
 @media android {
