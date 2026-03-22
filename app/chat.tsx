@@ -35,7 +35,9 @@ export default function ChatScreen() {
   const { chatData } = useChatStore()
   const insets = useSafeAreaInsets()
   const flatListRef = useRef<FlatList>(null)
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [showScrollButton, setShowScrollButton] = useState(false)
+  // Track last value to avoid redundant setState calls
+  const lastScrollState = useRef(false)
 
   const listItems = useMemo(() => {
     if (!chatData) return []
@@ -77,7 +79,8 @@ export default function ChatScreen() {
       }
     }
 
-    return items
+    // Reverse for inverted FlatList — latest messages render first at the bottom
+    return items.reverse()
   }, [chatData])
 
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
@@ -96,15 +99,18 @@ export default function ChatScreen() {
 
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent
-      const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y
-      setShowScrollToBottom(distanceFromBottom > SCROLL_THRESHOLD)
+      const shouldShow = e.nativeEvent.contentOffset.y > SCROLL_THRESHOLD
+      // Only call setState when the value actually changes
+      if (shouldShow !== lastScrollState.current) {
+        lastScrollState.current = shouldShow
+        setShowScrollButton(shouldShow)
+      }
     },
     []
   )
 
   const scrollToBottom = useCallback(() => {
-    flatListRef.current?.scrollToEnd({ animated: true })
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true })
   }, [])
 
   if (!chatData) {
@@ -128,18 +134,17 @@ export default function ChatScreen() {
           data={listItems}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 16, paddingTop: 8 }}
-          initialNumToRender={30}
-          maxToRenderPerBatch={20}
-          windowSize={15}
+          inverted
+          contentContainerStyle={{ paddingTop: insets.bottom + 16, paddingBottom: 8 }}
+          initialNumToRender={20}
+          maxToRenderPerBatch={15}
+          windowSize={11}
           removeClippedSubviews
           onScroll={handleScroll}
-          scrollEventThrottle={100}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          scrollEventThrottle={400}
         />
 
-        {showScrollToBottom && (
+        {showScrollButton && (
           <Pressable
             className='absolute bottom-5 right-4 h-10 w-10 items-center justify-center rounded-full bg-wa-header'
             style={{

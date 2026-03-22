@@ -1,10 +1,11 @@
 import { View, Text } from '@/src/tw'
+import { memo } from 'react'
 
 interface SystemMessageProps {
   text: string | null
 }
 
-export function SystemMessage({ text }: SystemMessageProps) {
+export const SystemMessage = memo(function SystemMessage({ text }: SystemMessageProps) {
   if (!text) return null
 
   return (
@@ -16,4 +17,4 @@ export function SystemMessage({ text }: SystemMessageProps) {
       </View>
     </View>
   )
-}
+})

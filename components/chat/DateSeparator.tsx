@@ -1,10 +1,11 @@
 import { View, Text } from '@/src/tw'
+import { memo } from 'react'
 
 interface DateSeparatorProps {
   date: string
 }
 
-export function DateSeparator({ date }: DateSeparatorProps) {
+export const DateSeparator = memo(function DateSeparator({ date }: DateSeparatorProps) {
   return (
     <View className='items-center py-2 px-4'>
       <View className='bg-wa-header rounded-lg px-3 py-1.5'>
@@ -12,4 +13,4 @@ export function DateSeparator({ date }: DateSeparatorProps) {
       </View>
     </View>
   )
-}
+})

@@ -3,7 +3,7 @@ import { MediaMessage } from './MediaMessage'
 import { RichText, extractFirstUrl } from './RichText'
 import { LinkPreview } from './LinkPreview'
 import type { Message } from '@/models/types'
-import { useMemo, useState, useCallback } from 'react'
+import { memo, useMemo, useState, useCallback } from 'react'
 
 const MAX_CHARS = 500
 
@@ -20,7 +20,7 @@ function formatTime(date: Date): string {
   return `${h}:${minutes.toString().padStart(2, '0')} ${ampm}`
 }
 
-export function ChatBubble({ message, showSender }: ChatBubbleProps) {
+export const ChatBubble = memo(function ChatBubble({ message, showSender }: ChatBubbleProps) {
   const isMine = message.isMine
   const hasMedia = message.mediaType !== null
   const hasText = message.text !== null && message.text.trim().length > 0
@@ -107,4 +107,4 @@ export function ChatBubble({ message, showSender }: ChatBubbleProps) {
       </View>
     </View>
   )
-}
+})

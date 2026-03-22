@@ -1,6 +1,6 @@
 import { Text } from '@/src/tw'
 import { Linking } from 'react-native'
-import { useCallback, type ReactNode } from 'react'
+import { memo, useCallback, useMemo, type ReactNode } from 'react'
 
 const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g
 
@@ -9,12 +9,12 @@ interface RichTextProps {
   isMine: boolean
 }
 
-export function RichText({ text, isMine }: RichTextProps) {
+export const RichText = memo(function RichText({ text, isMine }: RichTextProps) {
   const handleLinkPress = useCallback((url: string) => {
     Linking.openURL(url)
   }, [])
 
-  const parts = parseTextWithLinks(text)
+  const parts = useMemo(() => parseTextWithLinks(text), [text])
 
   return (
     <Text className='text-wa-text-primary text-[14.5px] leading-5 flex-shrink'>
@@ -33,7 +33,7 @@ export function RichText({ text, isMine }: RichTextProps) {
       )}
     </Text>
   )
-}
+})
 
 interface TextPart {
   type: 'text' | 'link'
@@ -60,9 +60,6 @@ function parseTextWithLinks(text: string): TextPart[] {
   return parts
 }
 
-/**
- * Extract the first URL from a text string, if any.
- */
 export function extractFirstUrl(text: string): string | null {
   const match = text.match(URL_REGEX)
   return match ? match[0] : null

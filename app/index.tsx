@@ -183,6 +183,19 @@ export default function HomeScreen() {
     )
   }, [savedChats, refreshSavedChats])
 
+  const renderChatItem = useCallback(
+    ({ item }: { item: SavedChat }) => (
+      <ChatListItem
+        chat={item}
+        onPress={() => handleOpenChat(item)}
+        onLongPress={() => handleDeleteChat(item)}
+      />
+    ),
+    [handleOpenChat, handleDeleteChat]
+  )
+
+  const chatKeyExtractor = useCallback((item: SavedChat) => item.id, [])
+
   // Loading overlay
   if (isLoading) {
     return (
@@ -240,16 +253,10 @@ export default function HomeScreen() {
     <View className='flex-1 bg-wa-bg'>
       <FlatList
         data={savedChats}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <ChatListItem
-            chat={item}
-            onPress={() => handleOpenChat(item)}
-            onLongPress={() => handleDeleteChat(item)}
-          />
-        )}
-        ItemSeparatorComponent={() => <View className='h-px bg-wa-divider ml-[72px]' />}
-        ListFooterComponent={() => (
+        keyExtractor={chatKeyExtractor}
+        renderItem={renderChatItem}
+        ItemSeparatorComponent={ListSeparator}
+        ListFooterComponent={
           <Pressable
             className='flex-row items-center justify-center gap-2 py-4 mt-2'
             onPress={handleResetAll}
@@ -257,7 +264,7 @@ export default function HomeScreen() {
             <Ionicons name='trash-outline' size={16} color='#FF6B6B' />
             <Text className='text-wa-error text-sm'>Reset All Chats</Text>
           </Pressable>
-        )}
+        }
       />
 
       {/* FAB */}
@@ -271,6 +278,8 @@ export default function HomeScreen() {
     </View>
   )
 }
+
+const ListSeparator = () => <View className='h-px bg-wa-divider ml-[72px]' />
 
 const StepItem = ({ number, text }: { number: string; text: string }) => {
   return (
