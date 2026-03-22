@@ -18,6 +18,8 @@ const generateBarHeights = (count: number): number[] => {
 }
 
 export const AudioPlayer = ({ uri, isMine, duration }: AudioPlayerProps) => {
+  console.log({ uri, isMine, duration })
+
   if (!uri) {
     return <AudioPlaceholder isMine={isMine} duration={duration} />
   }
@@ -46,7 +48,8 @@ interface AudioPlayerActiveProps {
 }
 
 const AudioPlayerActive = ({ uri, isMine, duration }: AudioPlayerActiveProps) => {
-  const player = useAudioPlayer(uri)
+  const source = useMemo(() => ({ uri }), [uri])
+  const player = useAudioPlayer(source)
   const status = useAudioPlayerStatus(player)
   const barHeights = useMemo(() => generateBarHeights(30), [])
 

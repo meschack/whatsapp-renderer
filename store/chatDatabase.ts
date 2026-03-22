@@ -57,6 +57,10 @@ export const deleteSavedChat = (id: string): void => {
   db.runSync('DELETE FROM saved_chats WHERE id = ?', id)
 }
 
+export const deleteAllSavedChats = (): void => {
+  db.runSync('DELETE FROM saved_chats')
+}
+
 export const getSavedChat = (id: string): SavedChat | null => {
   const row = db.getFirstSync<{
     id: string

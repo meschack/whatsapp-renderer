@@ -1,5 +1,5 @@
-import { File, Directory } from 'expo-file-system'
 import type { MediaMap } from '@/models/types'
+import { Directory, File } from 'expo-file-system'
 
 const MEDIA_EXTENSIONS = new Set([
   'jpg',

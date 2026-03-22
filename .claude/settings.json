@@ -6,7 +6,40 @@
       "Bash(pnpm info:*)",
       "Bash(pnpm remove:*)",
       "Read(//home/imgodwin/.claude/plugins/cache/expo-plugins/upgrading-expo/1.0.0/skills/upgrading-expo/references/**)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(npx expo:*)",
+      "Bash(eas build:*)",
+      "Bash(source \"$HOME/.nvm/nvm.sh\")",
+      "Bash(nvm ls:*)",
+      "Bash(tee /tmp/eas-build.log)",
+      "Bash(java -version)",
+      "Bash(echo $JAVA_HOME)",
+      "Read(//tmp/imgodwin/eas-build-local-nodejs/**)",
+      "Bash(./gradlew :app:assembleDebug)",
+      "Read(//home/imgodwin/.gradle/**)",
+      "Bash(./gradlew --stop)",
+      "Bash(rm -rf ~/.gradle/caches/9.0.0)",
+      "Read(//usr/lib/jvm/**)",
+      "Bash(dpkg -l)",
+      "Bash(grep -i openjdk.*17)",
+      "Bash(sudo apt-get:*)",
+      "Bash(export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64)",
+      "Bash(kill 77466 78048 78089)",
+      "Bash(./gradlew :app:assembleDebug --console=plain)",
+      "Read(//home/imgodwin/Android/Sdk/ndk/**)",
+      "Read(//home/imgodwin/Android/Sdk/ndk/27.1.12297006/**)",
+      "Read(//home/imgodwin/Android/Sdk/cmdline-tools/latest/bin/**)",
+      "Read(//home/imgodwin/Android/Sdk/cmdline-tools/**)",
+      "Bash(yes)",
+      "Bash(/home/imgodwin/Android/Sdk/cmdline-tools/latest/bin/sdkmanager \"ndk;27.1.12297006\")",
+      "Bash(kill %1)",
+      "Read(//home/imgodwin/Documents/workflow/personal-projects/whatsapp-renderer/**)",
+      "Bash(xargs kill:*)",
+      "Bash(unset ANDROID_NDK_HOME)",
+      "Bash(pkill -f \"expo start\")"
+    ],
+    "additionalDirectories": [
+      "/home/imgodwin/Android/Sdk/ndk/27.1.12297006"
     ]
   }
 }

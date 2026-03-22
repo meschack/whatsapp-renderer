@@ -6,7 +6,7 @@ import * as DocumentPicker from 'expo-document-picker'
 import { Ionicons } from '@expo/vector-icons'
 import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/src/tw'
 import { useChatStore } from '@/store/chatStore'
-import { deleteSavedChat } from '@/store/chatDatabase'
+import { deleteSavedChat, deleteAllSavedChats } from '@/store/chatDatabase'
 import { cleanupExtractedChat, extractZip } from '@/utils/zipExtractor'
 import { scanForMedia, findChatFile } from '@/utils/fileScanner'
 import { parseChat } from '@/utils/parser'
@@ -111,6 +111,7 @@ export default function HomeScreen() {
         }
 
         const mediaMap = scanForMedia(chat.extractDirUri)
+
         const chatFileUri = findChatFile(chat.extractDirUri)
 
         if (!chatFileUri) {
@@ -160,6 +161,27 @@ export default function HomeScreen() {
     },
     [refreshSavedChats]
   )
+
+  const handleResetAll = useCallback(() => {
+    Alert.alert(
+      'Reset All Chats',
+      'This will remove all imported chats and their data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset All',
+          style: 'destructive',
+          onPress: () => {
+            for (const chat of savedChats) {
+              cleanupExtractedChat(chat.extractDirUri)
+            }
+            deleteAllSavedChats()
+            refreshSavedChats()
+          }
+        }
+      ]
+    )
+  }, [savedChats, refreshSavedChats])
 
   // Loading overlay
   if (isLoading) {
@@ -227,6 +249,15 @@ export default function HomeScreen() {
           />
         )}
         ItemSeparatorComponent={() => <View className='h-px bg-wa-divider ml-[72px]' />}
+        ListFooterComponent={() => (
+          <Pressable
+            className='flex-row items-center justify-center gap-2 py-4 mt-2'
+            onPress={handleResetAll}
+          >
+            <Ionicons name='trash-outline' size={16} color='#FF6B6B' />
+            <Text className='text-wa-error text-sm'>Reset All Chats</Text>
+          </Pressable>
+        )}
       />
 
       {/* FAB */}
