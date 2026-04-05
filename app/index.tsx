@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Alert, FlatList } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Directory, File } from 'expo-file-system'
 import * as DocumentPicker from 'expo-document-picker'
@@ -16,6 +17,7 @@ import type { SavedChat } from '@/models/types'
 
 export default function HomeScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const {
     setChatData,
     isLoading,
@@ -272,6 +274,7 @@ export default function HomeScreen() {
         keyExtractor={chatKeyExtractor}
         renderItem={renderChatItem}
         ItemSeparatorComponent={ListSeparator}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         ListFooterComponent={
           <Pressable
             className='flex-row items-center justify-center gap-2 py-4 mt-2'
@@ -285,8 +288,15 @@ export default function HomeScreen() {
 
       {/* FAB */}
       <Pressable
-        className='absolute bottom-6 right-5 w-14 h-14 rounded-full bg-wa-accent justify-center items-center'
-        style={{ elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 4 }}
+        className='absolute right-5 w-14 h-14 rounded-full bg-wa-accent justify-center items-center'
+        style={{
+          bottom: insets.bottom + 24,
+          elevation: 6,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 3 },
+          shadowOpacity: 0.3,
+          shadowRadius: 4
+        }}
         onPress={handleImport}
       >
         <Ionicons name='add' size={28} color='#FFFFFF' />

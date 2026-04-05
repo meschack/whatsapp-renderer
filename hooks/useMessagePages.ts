@@ -30,10 +30,7 @@ function formatDateLabel(date: Date): string {
  * Since the list is inverted, "previous" in visual terms means newer messages.
  * lastMessageOfPrevPage is the last item currently in the list (the oldest message loaded so far).
  */
-function buildPageItems(
-  messages: Message[],
-  lastMessageOfPrevPage: Message | null
-): ListItem[] {
+function buildPageItems(messages: Message[], lastMessageOfPrevPage: Message | null): ListItem[] {
   const items: ListItem[] = []
 
   for (let i = 0; i < messages.length; i++) {

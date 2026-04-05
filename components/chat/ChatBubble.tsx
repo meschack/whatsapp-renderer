@@ -1,9 +1,9 @@
-import { View, Text } from '@/src/tw'
+import type { Message } from '@/models/types'
+import { Text, View } from '@/src/tw'
+import { memo, useCallback, useMemo, useState } from 'react'
+import { LinkPreview } from './LinkPreview'
 import { MediaMessage } from './MediaMessage'
 import { RichText, extractFirstUrl } from './RichText'
-import { LinkPreview } from './LinkPreview'
-import type { Message } from '@/models/types'
-import { memo, useMemo, useState, useCallback } from 'react'
 
 const MAX_CHARS = 500
 
@@ -43,13 +43,13 @@ export const ChatBubble = memo(function ChatBubble({ message, showSender }: Chat
   return (
     <View className={`px-3 py-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
       <View
-        className={`rounded-lg px-2 pt-1.5 pb-1 max-w-[85%] min-w-[80px] ${
+        className={`max-w-[85%] min-w-20 rounded-lg px-2 pt-1.5 pb-1 ${
           isMine ? 'bg-wa-bubble-mine' : 'bg-wa-bubble-other'
         }`}
       >
         {/* Sender name for group chats */}
         {showSender && !isMine && message.sender && (
-          <Text className='text-wa-text-sender text-[13px] font-medium mb-0.5'>
+          <Text className='text-wa-text-sender mb-0.5 text-[13px] font-medium'>
             {message.sender}
           </Text>
         )}
@@ -67,7 +67,7 @@ export const ChatBubble = memo(function ChatBubble({ message, showSender }: Chat
               <RichText text={displayText} isMine={isMine} />
               {!isTruncatable && (
                 <Text
-                  className={`text-[11px] ml-2 mt-0.5 ${
+                  className={`mt-0.5 ml-2 text-[11px] ${
                     isMine ? 'text-white/60' : 'text-wa-text-timestamp'
                   }`}
                 >
@@ -78,13 +78,13 @@ export const ChatBubble = memo(function ChatBubble({ message, showSender }: Chat
             {isTruncatable && (
               <View className='flex-row flex-wrap items-end'>
                 <Text
-                  className='text-wa-checkmark text-[13px] font-medium mt-1'
+                  className='text-wa-checkmark mt-1 text-[13px] font-medium'
                   onPress={toggleExpanded}
                 >
                   {expanded ? 'See less' : 'See more'}
                 </Text>
                 <Text
-                  className={`text-[11px] ml-auto mt-0.5 ${
+                  className={`mt-0.5 ml-auto text-[11px] ${
                     isMine ? 'text-white/60' : 'text-wa-text-timestamp'
                   }`}
                 >
@@ -94,12 +94,8 @@ export const ChatBubble = memo(function ChatBubble({ message, showSender }: Chat
             )}
           </View>
         ) : (
-          <View className='items-end mt-0.5'>
-            <Text
-              className={`text-[11px] ${
-                isMine ? 'text-white/60' : 'text-wa-text-timestamp'
-              }`}
-            >
+          <View className='mt-0.5 items-end'>
+            <Text className={`text-[11px] ${isMine ? 'text-white/60' : 'text-wa-text-timestamp'}`}>
               {formatTime(message.timestamp)}
             </Text>
           </View>

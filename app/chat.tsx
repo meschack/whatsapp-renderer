@@ -1,15 +1,21 @@
-import { useCallback, useRef, useState } from 'react'
-import { ImageBackground, type NativeSyntheticEvent, type NativeScrollEvent, ActivityIndicator } from 'react-native'
-import { FlashList, type FlashListRef } from '@shopify/flash-list'
-import { View, Pressable, Text } from '@/src/tw'
-import { Ionicons } from '@expo/vector-icons'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useChatStore } from '@/store/chatStore'
-import { ChatHeader } from '@/components/chat/ChatHeader'
+import { AudioPlayerProvider } from '@/components/chat/AudioPlayerProvider'
 import { ChatBubble } from '@/components/chat/ChatBubble'
-import { SystemMessage } from '@/components/chat/SystemMessage'
+import { ChatHeader } from '@/components/chat/ChatHeader'
 import { DateSeparator } from '@/components/chat/DateSeparator'
+import { SystemMessage } from '@/components/chat/SystemMessage'
 import { useMessagePages, type ListItem } from '@/hooks/useMessagePages'
+import { Pressable, View } from '@/src/tw'
+import { useChatStore } from '@/store/chatStore'
+import { Ionicons } from '@expo/vector-icons'
+import { FlashList, type FlashListRef } from '@shopify/flash-list'
+import { useCallback, useRef, useState } from 'react'
+import {
+  ActivityIndicator,
+  ImageBackground,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent
+} from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 const SCROLL_THRESHOLD = 300
 
@@ -46,16 +52,13 @@ export default function ChatScreen() {
     return 'text'
   }, [])
 
-  const handleScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const shouldShow = e.nativeEvent.contentOffset.y > SCROLL_THRESHOLD
-      if (shouldShow !== lastScrollState.current) {
-        lastScrollState.current = shouldShow
-        setShowScrollButton(shouldShow)
-      }
-    },
-    []
-  )
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const shouldShow = e.nativeEvent.contentOffset.y > SCROLL_THRESHOLD
+    if (shouldShow !== lastScrollState.current) {
+      lastScrollState.current = shouldShow
+      setShowScrollButton(shouldShow)
+    }
+  }, [])
 
   const scrollToBottom = useCallback(() => {
     flashListRef.current?.scrollToOffset({ offset: 0, animated: true })
@@ -68,58 +71,58 @@ export default function ChatScreen() {
   }, [hasMore, isLoadingMore, loadMore])
 
   if (!chatData) {
-    return <View className='flex-1 bg-wa-bg' />
+    return <View className='bg-wa-bg flex-1' />
   }
 
   return (
-    <View className='flex-1 bg-wa-bg'>
-      <ChatHeader
-        chatName={chatData.chatName}
-        participantCount={chatData.participants.length}
-      />
+    <AudioPlayerProvider>
+      <View className='bg-wa-bg flex-1'>
+        <ChatHeader chatName={chatData.chatName} participantCount={chatData.participants.length} />
 
-      <ImageBackground
-        source={require('@/assets/images/wallpaper.jpeg')}
-        style={{ flex: 1 }}
-        resizeMode='cover'
-      >
-        <FlashList
-          ref={flashListRef}
-          data={items}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          getItemType={getItemType}
-          inverted
-          contentContainerStyle={{ paddingTop: insets.bottom + 16, paddingBottom: 8 }}
-          onScroll={handleScroll}
-          scrollEventThrottle={400}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={
-            isLoadingMore ? (
-              <View className='py-4 items-center'>
-                <ActivityIndicator size='small' color='#00A884' />
-              </View>
-            ) : null
-          }
-        />
+        <ImageBackground
+          source={require('@/assets/images/wallpaper.jpeg')}
+          style={{ flex: 1 }}
+          resizeMode='cover'
+        >
+          <FlashList
+            ref={flashListRef}
+            data={items}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            getItemType={getItemType}
+            inverted
+            contentContainerStyle={{ paddingTop: insets.bottom + 16, paddingBottom: 8 }}
+            onScroll={handleScroll}
+            scrollEventThrottle={400}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              isLoadingMore ? (
+                <View className='items-center py-4'>
+                  <ActivityIndicator size='small' color='#00A884' />
+                </View>
+              ) : null
+            }
+          />
 
-        {showScrollButton && (
-          <Pressable
-            className='absolute bottom-5 right-4 h-10 w-10 items-center justify-center rounded-full bg-wa-header'
-            style={{
-              elevation: 4,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.3,
-              shadowRadius: 3
-            }}
-            onPress={scrollToBottom}
-          >
-            <Ionicons name='chevron-down' size={22} color='#8696A0' />
-          </Pressable>
-        )}
-      </ImageBackground>
-    </View>
+          {showScrollButton && (
+            <Pressable
+              className='bg-wa-header absolute right-4 h-10 w-10 items-center justify-center rounded-full'
+              style={{
+                bottom: insets.bottom + 20,
+                elevation: 4,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.3,
+                shadowRadius: 3
+              }}
+              onPress={scrollToBottom}
+            >
+              <Ionicons name='chevron-down' size={22} color='#8696A0' />
+            </Pressable>
+          )}
+        </ImageBackground>
+      </View>
+    </AudioPlayerProvider>
   )
 }
