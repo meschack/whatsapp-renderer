@@ -1,10 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   requestRecordingPermissionsAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
   useAudioSampleListener
 } from 'expo-audio'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 const PLAYBACK_RATES = [1, 1.5, 2] as const
 type PlaybackRate = (typeof PLAYBACK_RATES)[number]
@@ -15,7 +15,9 @@ const MAX_BAR_HEIGHT = 22
 
 function normalizeWaveform(buckets: number[]): number[] {
   const max = Math.max(...buckets, 0.001)
-  return buckets.map(v => MIN_BAR_HEIGHT + Math.pow(v / max, 0.6) * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT))
+  return buckets.map(
+    v => MIN_BAR_HEIGHT + Math.pow(v / max, 0.6) * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT)
+  )
 }
 
 interface AudioPlayerState {
@@ -71,7 +73,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const didFinish =
     status.duration > 0 && !status.playing && status.currentTime >= status.duration - 0.1
 
-  useAudioSampleListener(player, (sample) => {
+  useAudioSampleListener(player, sample => {
     const uri = activeUriRef.current
     const duration = durationRef.current
     if (!uri || duration <= 0) return
@@ -183,7 +185,16 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       playbackRate: PLAYBACK_RATES[rateIndex],
       waveforms
     }),
-    [activeUri, status.playing, progress, status.currentTime, status.duration, hasPlayed, rateIndex, waveforms]
+    [
+      activeUri,
+      status.playing,
+      progress,
+      status.currentTime,
+      status.duration,
+      hasPlayed,
+      rateIndex,
+      waveforms
+    ]
   )
 
   const actions: AudioPlayerActions = useMemo(

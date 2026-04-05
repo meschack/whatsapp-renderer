@@ -1,11 +1,11 @@
-import { AudioPlayerProvider } from '@/components/chat/AudioPlayerProvider'
-import { ChatBubble } from '@/components/chat/ChatBubble'
-import { ChatHeader } from '@/components/chat/ChatHeader'
-import { DateSeparator } from '@/components/chat/DateSeparator'
-import { SystemMessage } from '@/components/chat/SystemMessage'
-import { useMessagePages, type ListItem } from '@/hooks/useMessagePages'
+import { AudioPlayerProvider } from '@/components/chat/audio-player-provider'
+import { ChatBubble } from '@/components/chat/chat-bubble'
+import { ChatHeader } from '@/components/chat/chat-header'
+import { DateSeparator } from '@/components/chat/date-separator'
+import { SystemMessage } from '@/components/chat/system-message'
+import { useMessagePages, type ListItem } from '@/hooks/use-message-pages'
 import { Pressable, View } from '@/src/tw'
-import { useChatStore } from '@/store/chatStore'
+import { useChatStore } from '@/store/chat-store'
 import { Ionicons } from '@expo/vector-icons'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { useCallback, useRef, useState } from 'react'
@@ -107,7 +107,7 @@ export default function ChatScreen() {
 
           {showScrollButton && (
             <Pressable
-              className='bg-wa-header absolute right-4 h-10 w-10 items-center justify-center rounded-full'
+              className='bg-wa-header absolute right-4 size-10 items-center justify-center rounded-full'
               style={{
                 bottom: insets.bottom + 20,
                 elevation: 4,

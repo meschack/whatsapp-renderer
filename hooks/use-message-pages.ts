@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { getMessagePage } from '@/store/messageDatabase'
+import { getMessagePage } from '@/store/message-database'
 import type { Message } from '@/models/types'
 
 export type ListItem =

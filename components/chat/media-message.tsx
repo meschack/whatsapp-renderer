@@ -6,7 +6,7 @@ import type { ImageLoadEventData } from 'expo-image'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import { memo, useCallback, useState } from 'react'
 import { Modal, useWindowDimensions } from 'react-native'
-import { AudioPlayer } from './AudioPlayer'
+import { AudioPlayer } from './audio-player'
 
 interface MediaMessageProps {
   message: Message
@@ -154,7 +154,7 @@ const ChatImage = memo(function ChatImage({
 const DocumentMessage = memo(function DocumentMessage({ uri }: { uri: string }) {
   return (
     <View className='flex-row items-center gap-3 px-1 py-2'>
-      <View className='bg-wa-accent/20 h-10 w-10 items-center justify-center rounded-lg'>
+      <View className='bg-wa-accent/20 size-10 items-center justify-center rounded-lg'>
         <Ionicons name='document' size={22} color='#00A884' />
       </View>
       <View className='flex-1'>
@@ -177,7 +177,7 @@ const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }
         className='h-62.5 w-62.5 items-center justify-center overflow-hidden rounded-lg bg-black/50'
         onPress={() => setActivated(true)}
       >
-        <View className='h-14 w-14 items-center justify-center rounded-full bg-white/20'>
+        <View className='size-14 items-center justify-center rounded-full bg-white/20'>
           <Ionicons name='play' size={32} color='#FFFFFF' />
         </View>
       </Pressable>

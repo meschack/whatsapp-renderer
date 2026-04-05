@@ -2,10 +2,10 @@ import type { Message } from '@/models/types'
 import { Text, View } from '@/src/tw'
 import { cn } from '@/utils/css'
 import { memo, useCallback, useMemo, useState } from 'react'
-import { LinkPreview } from './LinkPreview'
-import { MessageMeta } from './MessageMeta'
-import { MediaMessage } from './MediaMessage'
-import { RichText, extractFirstUrl } from './RichText'
+import { LinkPreview } from './link-preview'
+import { MessageMeta } from './message-meta'
+import { MediaMessage } from './media-message'
+import { RichText, extractFirstUrl } from './rich-text'
 
 const MAX_CHARS = 500
 

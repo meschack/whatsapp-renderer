@@ -1,6 +1,6 @@
 import { openDatabaseSync } from 'expo-sqlite'
 import type { Message } from '@/models/types'
-import { stripEditedMarker } from '@/utils/messageText'
+import { stripEditedMarker } from '@/utils/message-text'
 
 const db = openDatabaseSync('whatsapp-renderer.db')
 
@@ -19,6 +19,14 @@ db.execSync(`
   );
   CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chatId, id);
 `)
+
+// Legacy cleanup: remove placeholder rows for missing images that should not render as messages.
+db.runSync(
+  `DELETE FROM messages
+   WHERE mediaType = 'image'
+     AND mediaUri IS NULL
+     AND text IS NULL`
+)
 
 const messageColumns = db.getAllSync<{ name: string }>('PRAGMA table_info(messages)')
 

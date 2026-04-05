@@ -4,16 +4,16 @@ import { Ionicons } from '@expo/vector-icons'
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { type GestureResponderEvent, type LayoutChangeEvent } from 'react-native'
-import { BAR_COUNT, useSharedAudioPlayer } from './AudioPlayerProvider'
-import { MessageMeta } from './MessageMeta'
+import { BAR_COUNT, useSharedAudioPlayer } from './audio-player-provider'
+import { MessageMeta } from './message-meta'
 
 interface AudioPlayerProps {
   message: Message
   showMeta?: boolean
 }
 
-const DEFAULT_WAVEFORM_WIDTH = 154
-const WAVEFORM_BAR_GAP = 2
+const DEFAULT_WAVEFORM_WIDTH = 150
+const WAVEFORM_BAR_GAP = 1.25
 
 export const AudioPlayer = memo(function AudioPlayer({
   message,
@@ -67,9 +67,9 @@ export const AudioPlayer = memo(function AudioPlayer({
     waveformWidth > 0 ? Math.max(0, Math.min(waveformWidth - 14, progress * waveformWidth - 7)) : 0
 
   const avatar = (
-    <View className='bg-wa-header/90 relative h-12 w-12 items-center justify-center rounded-full'>
+    <View className='bg-wa-header/90 relative size-12 items-center justify-center rounded-full'>
       <Ionicons name='person' size={22} color='#B7C4CF' />
-      <View className='bg-wa-bg absolute -right-0.5 -bottom-0.5 h-5 w-5 items-center justify-center rounded-full'>
+      <View className='bg-wa-bg absolute -right-0.5 -bottom-0.5 size-5 items-center justify-center rounded-full'>
         <Ionicons name='mic' size={13} color='#53BDEB' />
       </View>
     </View>

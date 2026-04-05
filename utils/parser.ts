@@ -1,6 +1,6 @@
 import type { Message, MediaMap } from "@/models/types";
-import { insertMessageBatch } from "@/store/messageDatabase";
-import { stripEditedMarker } from "@/utils/messageText";
+import { insertMessageBatch } from "@/store/message-database";
+import { stripEditedMarker } from "@/utils/message-text";
 
 // Matches lines like: [12/02/2024, 21:33:10] Sender: message
 // or [4/13/2025, 5:29:01 PM] Sender: message
@@ -296,6 +296,11 @@ export function parseChat(
     );
     const finalText = cleanText && cleanText.trim().length > 0 ? cleanText : null;
     const system = isSystemMessage(raw.sender, normalizedText ?? "");
+
+    // Missing exported images should not render as standalone placeholder messages.
+    if (mediaType === "image" && mediaUri === null && finalText === null) {
+      continue;
+    }
 
     batch.push({
       id: `msg-${i}`,
