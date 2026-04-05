@@ -1,5 +1,6 @@
 import { openDatabaseSync } from 'expo-sqlite'
 import type { Message } from '@/models/types'
+import { stripEditedMarker } from '@/utils/messageText'
 
 const db = openDatabaseSync('whatsapp-renderer.db')
 
@@ -12,11 +13,38 @@ db.execSync(`
     mediaType TEXT,
     mediaUri TEXT,
     timestamp INTEGER NOT NULL,
+    isEdited INTEGER NOT NULL DEFAULT 0,
     isMine INTEGER NOT NULL DEFAULT 0,
     isSystem INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chatId, id);
 `)
+
+const messageColumns = db.getAllSync<{ name: string }>('PRAGMA table_info(messages)')
+
+if (!messageColumns.some(column => column.name === 'isEdited')) {
+  db.runSync('ALTER TABLE messages ADD COLUMN isEdited INTEGER NOT NULL DEFAULT 0')
+
+  const legacyEditedRows = db.getAllSync<{ id: number; text: string | null }>(
+    'SELECT id, text FROM messages WHERE text LIKE ?',
+    '%<This message was edited>%'
+  )
+
+  if (legacyEditedRows.length > 0) {
+    db.withTransactionSync(() => {
+      const stmt = db.prepareSync('UPDATE messages SET text = ?, isEdited = 1 WHERE id = ?')
+
+      try {
+        for (const row of legacyEditedRows) {
+          const { cleanText } = stripEditedMarker(row.text ?? '')
+          stmt.executeSync(cleanText, row.id)
+        }
+      } finally {
+        stmt.finalizeSync()
+      }
+    })
+  }
+}
 
 /**
  * Batch insert messages into SQLite within a transaction.
@@ -26,8 +54,8 @@ db.execSync(`
 export function insertMessageBatch(chatId: string, messages: Message[]): void {
   db.withTransactionSync(() => {
     const stmt = db.prepareSync(
-      `INSERT INTO messages (chatId, sender, text, mediaType, mediaUri, timestamp, isMine, isSystem)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (chatId, sender, text, mediaType, mediaUri, timestamp, isEdited, isMine, isSystem)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     try {
       for (const msg of messages) {
@@ -38,6 +66,7 @@ export function insertMessageBatch(chatId: string, messages: Message[]): void {
           msg.mediaType,
           msg.mediaUri,
           msg.timestamp.getTime(),
+          msg.isEdited ? 1 : 0,
           msg.isMine ? 1 : 0,
           msg.isSystem ? 1 : 0
         )
@@ -55,6 +84,7 @@ interface MessageRow {
   mediaType: string | null
   mediaUri: string | null
   timestamp: number
+  isEdited: number
   isMine: number
   isSystem: number
 }
@@ -67,6 +97,7 @@ function rowToMessage(row: MessageRow): Message {
     mediaType: row.mediaType as Message['mediaType'],
     mediaUri: row.mediaUri,
     timestamp: new Date(row.timestamp),
+    isEdited: row.isEdited === 1,
     isMine: row.isMine === 1,
     isSystem: row.isSystem === 1
   }

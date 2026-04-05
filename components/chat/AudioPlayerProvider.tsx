@@ -1,15 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { useAudioPlayer, useAudioPlayerStatus, useAudioSampleListener } from 'expo-audio'
+import {
+  requestRecordingPermissionsAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  useAudioSampleListener
+} from 'expo-audio'
 
 const PLAYBACK_RATES = [1, 1.5, 2] as const
 type PlaybackRate = (typeof PLAYBACK_RATES)[number]
 
-export const BAR_COUNT = 30
-const DEFAULT_BAR_HEIGHTS = Array.from({ length: BAR_COUNT }, (_, i) => Math.sin(i * 0.7) * 8 + 12)
+export const BAR_COUNT = 40
+const MIN_BAR_HEIGHT = 4
+const MAX_BAR_HEIGHT = 22
 
 function normalizeWaveform(buckets: number[]): number[] {
   const max = Math.max(...buckets, 0.001)
-  return buckets.map(v => 4 + (v / max) * 16)
+  return buckets.map(v => MIN_BAR_HEIGHT + Math.pow(v / max, 0.6) * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT))
 }
 
 interface AudioPlayerState {
@@ -20,11 +26,11 @@ interface AudioPlayerState {
   duration: number
   hasPlayed: boolean
   playbackRate: PlaybackRate
-  waveform: number[]
+  waveforms: Map<string, number[]>
 }
 
 interface AudioPlayerActions {
-  play: (uri: string) => void
+  play: (uri: string) => Promise<void>
   pause: () => void
   seek: (fraction: number) => void
   cycleRate: () => void
@@ -40,15 +46,17 @@ const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null)
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
   const [activeUri, setActiveUri] = useState<string | null>(null)
   const [rateIndex, setRateIndex] = useState(0)
-  // Committed waveforms: only updated when a track finishes, so the display is always clean
-  const [committedWaveforms, setCommittedWaveforms] = useState<Map<string, number[]>>(new Map())
+  const [waveforms, setWaveforms] = useState<Map<string, number[]>>(new Map())
   const pendingPlayRef = useRef(false)
 
-  // Raw RMS buckets collected silently during playback — never cause re-renders
   const waveformBucketsRef = useRef<Map<string, number[]>>(new Map())
   const activeUriRef = useRef<string | null>(null)
   const currentTimeRef = useRef(0)
   const durationRef = useRef(0)
+  const lastWaveformCommitRef = useRef(0)
+  const samplingPermissionRef = useRef<'unknown' | 'granted' | 'denied'>(
+    process.env.EXPO_OS === 'android' ? 'unknown' : 'granted'
+  )
 
   const player = useAudioPlayer(null)
   const status = useAudioPlayerStatus(player)
@@ -63,7 +71,6 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const didFinish =
     status.duration > 0 && !status.playing && status.currentTime >= status.duration - 0.1
 
-  // Silently accumulate RMS per time-bucket — no state updates here
   useAudioSampleListener(player, (sample) => {
     const uri = activeUriRef.current
     const duration = durationRef.current
@@ -84,18 +91,23 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const existing = waveformBucketsRef.current.get(uri) ?? new Array(BAR_COUNT).fill(0)
     existing[bucketIndex] = Math.max(existing[bucketIndex], rms)
     waveformBucketsRef.current.set(uri, existing)
+
+    const now = Date.now()
+    if (now - lastWaveformCommitRef.current < 120 && bucketIndex < BAR_COUNT - 1) {
+      return
+    }
+
+    lastWaveformCommitRef.current = now
+    setWaveforms(prev => new Map(prev).set(uri, normalizeWaveform(existing)))
   })
 
-  // Commit the collected waveform once when the track finishes — one clean update
   useEffect(() => {
     if (!didFinish || !activeUri) return
     const buckets = waveformBucketsRef.current.get(activeUri)
     if (!buckets || buckets.every(v => v === 0)) return
-    const normalized = normalizeWaveform(buckets)
-    setCommittedWaveforms(prev => new Map(prev).set(activeUri, normalized))
+    setWaveforms(prev => new Map(prev).set(activeUri, normalizeWaveform(buckets)))
   }, [didFinish, activeUri])
 
-  // Auto-play when the player loads a new source
   useEffect(() => {
     if (pendingPlayRef.current && status.duration > 0 && !status.playing) {
       pendingPlayRef.current = false
@@ -103,8 +115,24 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
   }, [status.duration, status.playing, player])
 
+  const ensureSamplingPermission = useCallback(async () => {
+    if (process.env.EXPO_OS !== 'android') {
+      return true
+    }
+
+    if (samplingPermissionRef.current === 'granted') {
+      return true
+    }
+
+    const response = await requestRecordingPermissionsAsync()
+    samplingPermissionRef.current = response.granted ? 'granted' : 'denied'
+    return response.granted
+  }, [])
+
   const play = useCallback(
-    (uri: string) => {
+    async (uri: string) => {
+      await ensureSamplingPermission()
+
       if (uri === activeUri) {
         if (status.playing) {
           player.pause()
@@ -118,10 +146,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         setActiveUri(uri)
         setRateIndex(0)
         pendingPlayRef.current = true
+        lastWaveformCommitRef.current = 0
         player.replace({ uri })
       }
     },
-    [activeUri, player, status.playing, didFinish]
+    [activeUri, player, status.playing, didFinish, ensureSamplingPermission]
   )
 
   const pause = useCallback(() => {
@@ -143,11 +172,6 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     player.setPlaybackRate(PLAYBACK_RATES[nextIndex])
   }, [rateIndex, player])
 
-  // Use committed (complete) waveform if available, otherwise default sine
-  const waveform = activeUri
-    ? (committedWaveforms.get(activeUri) ?? DEFAULT_BAR_HEIGHTS)
-    : DEFAULT_BAR_HEIGHTS
-
   const state: AudioPlayerState = useMemo(
     () => ({
       activeUri,
@@ -157,9 +181,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       duration: status.duration,
       hasPlayed,
       playbackRate: PLAYBACK_RATES[rateIndex],
-      waveform
+      waveforms
     }),
-    [activeUri, status.playing, progress, status.currentTime, status.duration, hasPlayed, rateIndex, waveform]
+    [activeUri, status.playing, progress, status.currentTime, status.duration, hasPlayed, rateIndex, waveforms]
   )
 
   const actions: AudioPlayerActions = useMemo(

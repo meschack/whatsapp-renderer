@@ -5,6 +5,7 @@ export interface Message {
   mediaType: 'image' | 'video' | 'audio' | 'document' | null
   mediaUri: string | null
   timestamp: Date
+  isEdited: boolean
   isMine: boolean
   isSystem: boolean
 }

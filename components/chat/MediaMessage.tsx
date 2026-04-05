@@ -53,7 +53,12 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
       return <LazyVideoMessage uri={message.mediaUri} />
 
     case 'audio':
-      return <AudioPlayer uri={message.mediaUri} isMine={message.isMine} />
+      return (
+        <AudioPlayer
+          message={message}
+          showMeta={message.text === null || message.text.trim().length === 0}
+        />
+      )
 
     case 'document':
       return <DocumentMessage uri={message.mediaUri} />
@@ -169,7 +174,7 @@ const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }
   if (!activated) {
     return (
       <Pressable
-        className='h-[250px] w-[250px] items-center justify-center overflow-hidden rounded-lg bg-black/50'
+        className='h-62.5 w-62.5 items-center justify-center overflow-hidden rounded-lg bg-black/50'
         onPress={() => setActivated(true)}
       >
         <View className='h-14 w-14 items-center justify-center rounded-full bg-white/20'>
@@ -190,7 +195,7 @@ function ActiveVideoPlayer({ uri }: { uri: string }) {
   }, [player])
 
   return (
-    <View className='h-[250px] w-[250px] overflow-hidden rounded-lg' onLayout={handleLayout}>
+    <View className='h-62.5 w-62.5 overflow-hidden rounded-lg' onLayout={handleLayout}>
       <VideoView
         player={player}
         style={{ width: '100%', height: '100%' }}

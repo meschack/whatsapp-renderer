@@ -1,5 +1,6 @@
 import type { Message, MediaMap } from "@/models/types";
 import { insertMessageBatch } from "@/store/messageDatabase";
+import { stripEditedMarker } from "@/utils/messageText";
 
 // Matches lines like: [12/02/2024, 21:33:10] Sender: message
 // or [4/13/2025, 5:29:01 PM] Sender: message
@@ -288,19 +289,22 @@ export function parseChat(
   for (let i = 0; i < rawMessages.length; i++) {
     const raw = rawMessages[i];
     const timestamp = parseTimestamp(raw.date, raw.time);
+    const { cleanText: normalizedText, isEdited } = stripEditedMarker(raw.text);
     const { mediaType, mediaUri, cleanText } = detectMediaInText(
-      raw.text,
+      normalizedText ?? "",
       mediaMap
     );
-    const system = isSystemMessage(raw.sender, raw.text);
+    const finalText = cleanText && cleanText.trim().length > 0 ? cleanText : null;
+    const system = isSystemMessage(raw.sender, normalizedText ?? "");
 
     batch.push({
       id: `msg-${i}`,
       sender: raw.sender,
-      text: cleanText,
+      text: finalText,
       mediaType,
       mediaUri,
       timestamp,
+      isEdited,
       isMine: raw.sender === detectedMyName,
       isSystem: system && !raw.sender,
     });

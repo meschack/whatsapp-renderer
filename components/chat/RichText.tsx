@@ -1,6 +1,6 @@
 import { Text } from '@/src/tw'
-import { Linking } from 'react-native'
 import { memo, useCallback, useMemo, type ReactNode } from 'react'
+import { Linking } from 'react-native'
 
 const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g
 
@@ -17,14 +17,14 @@ export const RichText = memo(function RichText({ text, isMine }: RichTextProps) 
   const parts = useMemo(() => parseTextWithLinks(text), [text])
 
   return (
-    <Text className='text-wa-text-primary text-[14.5px] leading-5 flex-shrink'>
+    <Text className='text-wa-text-primary shrink text-[14.5px] leading-5'>
       {parts.map((part, i) =>
         part.type === 'text' ? (
-          part.value as ReactNode
+          (part.value as ReactNode)
         ) : (
           <Text
             key={i}
-            className='text-[#53BDEB] text-[14.5px] leading-5 underline'
+            className='text-[14.5px] leading-5 text-[#25d366] underline'
             onPress={() => handleLinkPress(part.value)}
           >
             {part.value}
