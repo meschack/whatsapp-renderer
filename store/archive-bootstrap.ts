@@ -38,6 +38,9 @@ interface SavedChatRow {
   importedAt: string
   archiveFingerprint: string | null
   importDiagnostics: string | null
+  isPinned: number
+  isArchived: number
+  pinnedAt: number | null
 }
 
 interface Migration {
@@ -45,7 +48,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 11
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 12
 
 const migrations: Migration[] = [
   {
@@ -243,6 +246,28 @@ const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_link_previews_expiry ON link_previews(expiresAt);
       `)
     }
+  },
+  {
+    version: 12,
+    async migrate(database) {
+      const columns = await database.all<{ name: string }>('PRAGMA table_info(saved_chats)')
+      if (!columns.some(column => column.name === 'isPinned')) {
+        await database.exec(
+          'ALTER TABLE saved_chats ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0'
+        )
+      }
+      if (!columns.some(column => column.name === 'isArchived')) {
+        await database.exec(
+          'ALTER TABLE saved_chats ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0'
+        )
+      }
+      if (!columns.some(column => column.name === 'pinnedAt')) {
+        await database.exec('ALTER TABLE saved_chats ADD COLUMN pinnedAt INTEGER')
+      }
+      await database.exec(
+        'CREATE INDEX IF NOT EXISTS idx_saved_chats_library ON saved_chats(isArchived, isPinned, pinnedAt, lastMessageTime)'
+      )
+    }
   }
 ]
 
@@ -309,6 +334,8 @@ async function loadSavedChats(database: ArchiveDatabase): Promise<SavedChat[]> {
   return rows.map(row => ({
     ...row,
     participants: JSON.parse(row.participants) as string[],
-    importDiagnostics: parseImportDiagnostics(row.importDiagnostics)
+    importDiagnostics: parseImportDiagnostics(row.importDiagnostics),
+    isPinned: row.isPinned === 1,
+    isArchived: row.isArchived === 1
   }))
 }
