@@ -151,6 +151,16 @@ describe('archive bootstrap', () => {
       )
     ).toEqual({ text: 'Corrected', isEdited: 1 })
 
+    await database.run(
+      "INSERT INTO message_bookmarks (messageId, chatId, createdAt) VALUES (1, 'chat-1', 1)"
+    )
+    await database.run('DELETE FROM messages WHERE id = 1')
+    expect(
+      await database.first<{ messageId: number }>(
+        'SELECT messageId FROM message_bookmarks WHERE messageId = 1'
+      )
+    ).toBeNull()
+
     sqlite.close()
   })
 

@@ -1,5 +1,6 @@
 import { AudioPlayerProvider } from '@/components/chat/audio-player-provider'
 import { ChatBubble } from '@/components/chat/chat-bubble'
+import { BookmarkBrowser } from '@/components/chat/bookmark-browser'
 import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
 import { ChatSearch } from '@/components/chat/chat-search'
@@ -19,6 +20,7 @@ import { saveChatPosition, type MessageSearchResult } from '@/store/message-data
 import { formatDateLabel } from '@/utils/chat-timeline'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import type { AttachmentRecord } from '@/utils/media-library'
+import type { BookmarkRecord } from '@/utils/bookmarks'
 import { Ionicons } from '@expo/vector-icons'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -51,6 +53,7 @@ export default function ChatScreen() {
   const [showDateChip, setShowDateChip] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false)
+  const [isBookmarkBrowserOpen, setIsBookmarkBrowserOpen] = useState(false)
   const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [actionSelection, setActionSelection] = useState<MessageActionSelection | null>(null)
@@ -240,6 +243,7 @@ export default function ChatScreen() {
       setHighlightedMessageId(messageId)
       setIsSearchOpen(false)
       setIsMediaLibraryOpen(false)
+      setIsBookmarkBrowserOpen(false)
     },
     [chatData?.chatId, positionWriter]
   )
@@ -251,6 +255,11 @@ export default function ChatScreen() {
 
   const handleMediaJump = useCallback(
     (record: AttachmentRecord) => jumpToMessage(record.sequence, record.messageId),
+    [jumpToMessage]
+  )
+
+  const handleBookmarkJump = useCallback(
+    (record: BookmarkRecord) => jumpToMessage(record.sequence, record.messageId),
     [jumpToMessage]
   )
 
@@ -266,11 +275,18 @@ export default function ChatScreen() {
           participantCount={chatData.participants.length}
           onSearchPress={() => {
             setIsMediaLibraryOpen(false)
+            setIsBookmarkBrowserOpen(false)
             setIsSearchOpen(true)
           }}
           onMediaPress={() => {
             setIsSearchOpen(false)
+            setIsBookmarkBrowserOpen(false)
             setIsMediaLibraryOpen(true)
+          }}
+          onBookmarksPress={() => {
+            setIsSearchOpen(false)
+            setIsMediaLibraryOpen(false)
+            setIsBookmarkBrowserOpen(true)
           }}
         />
 
@@ -377,6 +393,16 @@ export default function ChatScreen() {
                 chatId={chatData.chatId}
                 onClose={() => setIsMediaLibraryOpen(false)}
                 onJump={handleMediaJump}
+              />
+            </View>
+          )}
+
+          {isBookmarkBrowserOpen && (
+            <View className='absolute inset-0'>
+              <BookmarkBrowser
+                chatId={chatData.chatId}
+                onClose={() => setIsBookmarkBrowserOpen(false)}
+                onJump={handleBookmarkJump}
               />
             </View>
           )}
