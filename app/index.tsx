@@ -9,11 +9,23 @@ import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/sr
 import { useChatStore } from '@/store/chat-store'
 import { deleteSavedChat, deleteAllSavedChats } from '@/store/chat-database'
 import { hasMessages, deleteMessages, getMessageCount, getParticipants } from '@/store/message-database'
-import { cleanupExtractedChat, extractZip } from '@/utils/zip-extractor'
+import { cleanupExtractedChat } from '@/utils/zip-extractor'
 import { scanForMedia, findChatFile } from '@/utils/file-scanner'
 import { parseChat } from '@/utils/parser'
+import { importChat } from '@/utils/chat-import'
+import type { ChatImportPhase } from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
 import type { SavedChat } from '@/models/types'
+
+const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
+  extracting: 'Extracting archive',
+  discovering: 'Finding messages and media',
+  reading: 'Reading transcript',
+  parsing: 'Importing messages',
+  persisting: 'Saving chat',
+  complete: 'Import complete',
+  'rolling-back': 'Cleaning up failed import'
+}
 
 export default function HomeScreen() {
   const router = useRouter()
@@ -53,42 +65,25 @@ export default function HomeScreen() {
         return
       }
 
-      setStatusText('Extracting zip file...')
-      const extractDirUri = await extractZip(pickedFile.uri)
-
-      // Generate chatId from the extract directory name
-      const chatId = extractDirUri.split('/').filter(Boolean).pop() ?? `chat-${Date.now()}`
-
-      setStatusText('Scanning for media files...')
-      const mediaMap = scanForMedia(extractDirUri)
-
-      setStatusText('Finding chat file...')
-      const chatFileUri = findChatFile(extractDirUri)
-
-      if (!chatFileUri) {
-        throw new Error('No chat file found in the archive. Make sure this is a WhatsApp export.')
-      }
-
-      setStatusText('Parsing messages...')
-      const chatFile = new File(chatFileUri)
-      const chatContent = await chatFile.text()
-
-      const { participants, messageCount } = parseChat(chatContent, mediaMap, chatId)
-
-      if (messageCount === 0) {
-        throw new Error('No messages found in the chat file.')
-      }
-
-      const chatName = pickedFile.name?.replace('.zip', '').replace('WhatsApp Chat - ', '') ?? 'Chat'
+      const { chat } = await importChat({
+        temporaryArchiveUri: pickedFile.uri,
+        archiveName: pickedFile.name ?? 'Chat.zip',
+        onProgress: ({ phase, completed, total }) => {
+          const percentage = Math.round((completed / total) * 100)
+          setStatusText(`${IMPORT_STATUS_TEXT[phase]} · ${percentage}%`)
+        }
+      })
 
       setChatData({
-        chatId,
-        participants,
-        chatName,
-        myName: '',
-        extractDirUri,
-        messageCount
+        chatId: chat.id,
+        participants: chat.participants,
+        chatName: chat.chatName,
+        myName: chat.myName,
+        extractDirUri: chat.extractDirUri,
+        messageCount: chat.messageCount,
+        importedAt: chat.importedAt
       })
+      refreshSavedChats()
 
       setStatusText('')
       setIsLoading(false)
@@ -100,7 +95,7 @@ export default function HomeScreen() {
       setStatusText('')
       Alert.alert('Import Error', message)
     }
-  }, [router, setChatData, setIsLoading, setError])
+  }, [refreshSavedChats, router, setChatData, setIsLoading, setError])
 
   const handleOpenChat = useCallback(
     async (chat: SavedChat) => {
@@ -143,7 +138,8 @@ export default function HomeScreen() {
           chatName: chat.chatName,
           myName: chat.myName,
           extractDirUri: chat.extractDirUri,
-          messageCount
+          messageCount,
+          importedAt: chat.importedAt
         })
 
         setStatusText('')

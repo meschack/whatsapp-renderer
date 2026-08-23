@@ -34,58 +34,65 @@ export const extractZip = async (zipUri: string): Promise<string> => {
     // Native module not available, fall through to JSZip
   }
 
-  // Fallback: JSZip with legacy API
-  // Copy to a known cache location first (document picker URIs can be tricky)
+  // Fallback: JSZip with legacy API. The nested try/finally ensures our
+  // internal cache copy is removed even if reading or extracting fails.
   const cacheZipPath = `${LegacyFS.cacheDirectory}import-${timestamp}.zip`
-  await LegacyFS.copyAsync({ from: zipUri, to: cacheZipPath })
+  try {
+    try {
+      await LegacyFS.copyAsync({ from: zipUri, to: cacheZipPath })
 
-  // Read zip as base64 using legacy API (supports large files better)
-  const zipContent = await LegacyFS.readAsStringAsync(cacheZipPath, {
-    encoding: LegacyFS.EncodingType.Base64
-  })
-
-  const zip = await JSZip.loadAsync(zipContent, { base64: true })
-
-  // Process entries one at a time to minimize memory usage
-  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-    if (zipEntry.dir) {
-      const dirPath = `${LegacyFS.documentDirectory}whatsapp-chats/chat-${timestamp}/${relativePath}`
-      const dirInfo = await LegacyFS.getInfoAsync(dirPath)
-      if (!dirInfo.exists) {
-        await LegacyFS.makeDirectoryAsync(dirPath, { intermediates: true })
-      }
-      continue
-    }
-
-    // Ensure parent directory exists
-    if (relativePath.includes('/')) {
-      const parentPath = relativePath.substring(0, relativePath.lastIndexOf('/'))
-      const fullParentPath = `${LegacyFS.documentDirectory}whatsapp-chats/chat-${timestamp}/${parentPath}`
-      const parentInfo = await LegacyFS.getInfoAsync(fullParentPath)
-      if (!parentInfo.exists) {
-        await LegacyFS.makeDirectoryAsync(fullParentPath, { intermediates: true })
-      }
-    }
-
-    const fullPath = `${LegacyFS.documentDirectory}whatsapp-chats/chat-${timestamp}/${relativePath}`
-
-    if (relativePath.endsWith('.txt')) {
-      const content = await zipEntry.async('string')
-      await LegacyFS.writeAsStringAsync(fullPath, content, {
-        encoding: LegacyFS.EncodingType.UTF8
-      })
-    } else {
-      const content = await zipEntry.async('base64')
-      await LegacyFS.writeAsStringAsync(fullPath, content, {
+      const zipContent = await LegacyFS.readAsStringAsync(cacheZipPath, {
         encoding: LegacyFS.EncodingType.Base64
       })
+      const zip = await JSZip.loadAsync(zipContent, { base64: true })
+
+      // Process entries one at a time to minimize memory usage.
+      for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+        if (zipEntry.dir) {
+          const dirPath = `${LegacyFS.documentDirectory}whatsapp-chats/chat-${timestamp}/${relativePath}`
+          const dirInfo = await LegacyFS.getInfoAsync(dirPath)
+          if (!dirInfo.exists) {
+            await LegacyFS.makeDirectoryAsync(dirPath, { intermediates: true })
+          }
+          continue
+        }
+
+        if (relativePath.includes('/')) {
+          const parentPath = relativePath.substring(0, relativePath.lastIndexOf('/'))
+          const fullParentPath = `${LegacyFS.documentDirectory}whatsapp-chats/chat-${timestamp}/${parentPath}`
+          const parentInfo = await LegacyFS.getInfoAsync(fullParentPath)
+          if (!parentInfo.exists) {
+            await LegacyFS.makeDirectoryAsync(fullParentPath, { intermediates: true })
+          }
+        }
+
+        const fullPath = `${LegacyFS.documentDirectory}whatsapp-chats/chat-${timestamp}/${relativePath}`
+        if (relativePath.endsWith('.txt')) {
+          const content = await zipEntry.async('string')
+          await LegacyFS.writeAsStringAsync(fullPath, content, {
+            encoding: LegacyFS.EncodingType.UTF8
+          })
+        } else {
+          const content = await zipEntry.async('base64')
+          await LegacyFS.writeAsStringAsync(fullPath, content, {
+            encoding: LegacyFS.EncodingType.Base64
+          })
+        }
+      }
+    } finally {
+      await LegacyFS.deleteAsync(cacheZipPath, { idempotent: true })
     }
+
+    return extractDir.uri
+  } catch (error) {
+    cleanupExtractedChat(extractDir.uri)
+    throw error
   }
+}
 
-  // Clean up cached zip
-  await LegacyFS.deleteAsync(cacheZipPath, { idempotent: true })
-
-  return extractDir.uri
+/** Remove the app-owned cache copy returned by DocumentPicker. */
+export const cleanupTemporaryArchive = async (archiveUri: string): Promise<void> => {
+  await LegacyFS.deleteAsync(archiveUri, { idempotent: true })
 }
 
 /**
