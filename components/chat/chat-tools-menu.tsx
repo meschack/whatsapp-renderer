@@ -8,6 +8,7 @@ interface ChatToolsMenuProps {
   onMedia(): void
   onBookmarks(): void
   onInsights(): void
+  onAppearance(): void
   hapticsEnabled: boolean
   onToggleHaptics(): void
   onDiagnostics?(): void
@@ -20,6 +21,7 @@ export function ChatToolsMenu({
   onMedia,
   onBookmarks,
   onInsights,
+  onAppearance,
   hapticsEnabled,
   onToggleHaptics,
   onDiagnostics
@@ -34,6 +36,7 @@ export function ChatToolsMenu({
     { label: 'Chat media', icon: 'images-outline', onPress: onMedia },
     { label: 'Bookmarks', icon: 'bookmark-outline', onPress: onBookmarks },
     { label: 'Chat insights', icon: 'stats-chart-outline', onPress: onInsights },
+    { label: 'Appearance', icon: 'color-palette-outline', onPress: onAppearance },
     {
       label: `Haptic feedback ${hapticsEnabled ? 'on' : 'off'}`,
       icon: hapticsEnabled ? 'phone-portrait' : 'phone-portrait-outline',
