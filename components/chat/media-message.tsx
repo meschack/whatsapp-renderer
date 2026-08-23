@@ -42,6 +42,9 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
       return (
         <ChatImage
           uri={message.mediaUri}
+          previewUri={message.mediaPreviewUri}
+          width={message.mediaWidth}
+          height={message.mediaHeight}
           isModalVisible={imageModalVisible}
           onOpenModal={() => setImageModalVisible(true)}
           onCloseModal={() => setImageModalVisible(false)}
@@ -50,7 +53,14 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
     }
 
     case 'video':
-      return <LazyVideoMessage uri={message.mediaUri} />
+      return (
+        <LazyVideoMessage
+          uri={message.mediaUri}
+          previewUri={message.mediaPreviewUri}
+          mediaWidth={message.mediaWidth}
+          mediaHeight={message.mediaHeight}
+        />
+      )
 
     case 'audio':
       return (
@@ -99,6 +109,9 @@ const Sticker = memo(function Sticker({ uri }: { uri: string }) {
 
 interface ChatImageProps {
   uri: string
+  previewUri: string | null
+  width: number | null
+  height: number | null
   isModalVisible: boolean
   onOpenModal: () => void
   onCloseModal: () => void
@@ -106,20 +119,23 @@ interface ChatImageProps {
 
 const ChatImage = memo(function ChatImage({
   uri,
+  previewUri,
+  width,
+  height,
   isModalVisible,
   onOpenModal,
   onCloseModal
 }: ChatImageProps) {
   const { width: screenWidth } = useWindowDimensions()
   const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
-  const previewHeight = previewWidth / MEDIA_ASPECT_RATIO
+  const previewHeight = getPreviewHeight(previewWidth, width, height)
 
   return (
     <>
       <Pressable onPress={onOpenModal}>
         <Image
-          source={{ uri }}
-          recyclingKey={uri}
+          source={{ uri: previewUri ?? uri }}
+          recyclingKey={previewUri ?? uri}
           className='rounded-lg object-cover'
           style={{ width: previewWidth, height: previewHeight }}
         />
@@ -165,11 +181,23 @@ const DocumentMessage = memo(function DocumentMessage({ uri }: { uri: string }) 
 })
 
 // Only create the native video player when the user taps play
-const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }) {
+interface LazyVideoMessageProps {
+  uri: string
+  previewUri: string | null
+  mediaWidth: number | null
+  mediaHeight: number | null
+}
+
+const LazyVideoMessage = memo(function LazyVideoMessage({
+  uri,
+  previewUri,
+  mediaWidth,
+  mediaHeight
+}: LazyVideoMessageProps) {
   const [activated, setActivated] = useRecyclingState(false, [uri])
   const { width: screenWidth } = useWindowDimensions()
   const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
-  const previewHeight = previewWidth / MEDIA_ASPECT_RATIO
+  const previewHeight = getPreviewHeight(previewWidth, mediaWidth, mediaHeight)
 
   if (!activated) {
     return (
@@ -178,6 +206,14 @@ const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }
         style={{ width: previewWidth, height: previewHeight }}
         onPress={() => setActivated(true)}
       >
+        {previewUri && (
+          <Image
+            source={{ uri: previewUri }}
+            recyclingKey={previewUri}
+            className='absolute inset-0 object-cover'
+            style={{ width: previewWidth, height: previewHeight }}
+          />
+        )}
         <View className='size-14 items-center justify-center rounded-full bg-white/20'>
           <Ionicons name='play' size={32} color='#FFFFFF' />
         </View>
@@ -187,6 +223,11 @@ const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }
 
   return <ActiveVideoPlayer uri={uri} width={previewWidth} height={previewHeight} />
 })
+
+function getPreviewHeight(width: number, mediaWidth: number | null, mediaHeight: number | null) {
+  if (!mediaWidth || !mediaHeight) return width / MEDIA_ASPECT_RATIO
+  return Math.min(width * 1.25, Math.max(120, width * (mediaHeight / mediaWidth)))
+}
 
 function ActiveVideoPlayer({ uri, width, height }: { uri: string; width: number; height: number }) {
   const player = useVideoPlayer(uri)

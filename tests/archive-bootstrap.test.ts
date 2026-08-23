@@ -88,6 +88,18 @@ describe('archive bootstrap', () => {
       user_version: LATEST_ARCHIVE_SCHEMA_VERSION
     })
     expect(
+      (await database.all<{ name: string }>('PRAGMA table_info(messages)')).map(column => column.name)
+    ).toEqual(
+      expect.arrayContaining([
+        'mediaFilename',
+        'mediaSize',
+        'mediaWidth',
+        'mediaHeight',
+        'mediaDuration',
+        'mediaPreviewUri'
+      ])
+    )
+    expect(
       await database.first<{ text: string; isEdited: number }>(
         'SELECT text, isEdited FROM messages WHERE chatId = ?',
         ['chat-1']

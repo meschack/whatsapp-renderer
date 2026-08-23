@@ -42,7 +42,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 2
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 3
 
 const migrations: Migration[] = [
   {
@@ -103,6 +103,30 @@ const migrations: Migration[] = [
           AND text IS NULL;
         CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chatId, id);
       `)
+    }
+  },
+  {
+    version: 3,
+    async migrate(database) {
+      const columns = await database.all<{ name: string }>('PRAGMA table_info(messages)')
+      const additions = [
+        ['mediaFilename', 'TEXT'],
+        ['mediaSize', 'INTEGER'],
+        ['mediaWidth', 'INTEGER'],
+        ['mediaHeight', 'INTEGER'],
+        ['mediaDuration', 'REAL'],
+        ['mediaPreviewUri', 'TEXT']
+      ] as const
+
+      for (const [name, type] of additions) {
+        if (!columns.some(column => column.name === name)) {
+          await database.exec(`ALTER TABLE messages ADD COLUMN ${name} ${type}`)
+        }
+      }
+
+      await database.exec(
+        'CREATE INDEX IF NOT EXISTS idx_messages_media ON messages(chatId, mediaType, id)'
+      )
     }
   }
 ]

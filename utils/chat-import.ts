@@ -2,6 +2,7 @@ import { deleteSavedChat, saveChatMetadata } from '@/store/chat-database'
 import { deleteMessages, getLastMessage } from '@/store/message-database'
 import { createChatImporter } from '@/utils/chat-import-workflow'
 import { findChatFile, scanForMedia } from '@/utils/file-scanner'
+import { indexMedia } from '@/utils/media-index'
 import { parseChat } from '@/utils/parser'
 import { openFileTranscript } from '@/utils/transcript-stream'
 import {
@@ -18,8 +19,9 @@ export const importChat = createChatImporter({
       throw new Error('No chat file found in the archive. Make sure this is a WhatsApp export.')
     }
 
-    return { transcriptUri, mediaMap: scanForMedia(directoryUri) }
+    return { transcriptUri, mediaCandidates: scanForMedia(directoryUri) }
   },
+  indexMedia,
   openTranscript: openFileTranscript,
   parseTranscript: ({ openTranscript, mediaMap, chatId }) =>
     parseChat(openTranscript, mediaMap, chatId),

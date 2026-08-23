@@ -1,10 +1,12 @@
 import type { MediaMap, SavedChat } from '@/models/types'
+import type { MediaCandidate, MediaIndexProgress } from '@/utils/media-indexer'
 
 type Awaitable<T> = T | Promise<T>
 
 export type ChatImportPhase =
   | 'extracting'
   | 'discovering'
+  | 'indexing-media'
   | 'reading'
   | 'parsing'
   | 'persisting'
@@ -15,6 +17,9 @@ export interface ChatImportProgress {
   phase: ChatImportPhase
   completed: number
   total: number
+  phaseCompleted?: number
+  phaseTotal?: number
+  currentItem?: string
 }
 
 export interface ChatImportRequest {
@@ -31,8 +36,13 @@ export interface ChatImportDependencies {
   extractArchive: (archiveUri: string) => Promise<string>
   discoverArchive: (directoryUri: string) => Awaitable<{
     transcriptUri: string
-    mediaMap: MediaMap
+    mediaCandidates: MediaCandidate[]
   }>
+  indexMedia: (
+    candidates: MediaCandidate[],
+    directoryUri: string,
+    onProgress: (progress: MediaIndexProgress) => void
+  ) => Promise<MediaMap>
   openTranscript: (transcriptUri: string) => Awaitable<() => AsyncIterable<string>>
   parseTranscript: (input: {
     chatId: string
@@ -48,7 +58,7 @@ export interface ChatImportDependencies {
   now: () => Date
 }
 
-const TOTAL_IMPORT_UNITS = 5
+const TOTAL_IMPORT_UNITS = 6
 
 function getChatId(directoryUri: string): string {
   const chatId = directoryUri.split('/').filter(Boolean).pop()
@@ -79,18 +89,33 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
 
       completed = 1
       report('discovering')
-      const { transcriptUri, mediaMap } = await dependencies.discoverArchive(extractedDirectoryUri)
+      const { transcriptUri, mediaCandidates } = await dependencies.discoverArchive(
+        extractedDirectoryUri
+      )
 
       completed = 2
+      report('indexing-media')
+      const mediaMap = await dependencies.indexMedia(mediaCandidates, extractedDirectoryUri, progress => {
+        request.onProgress?.({
+          phase: 'indexing-media',
+          completed,
+          total: TOTAL_IMPORT_UNITS,
+          phaseCompleted: progress.completed,
+          phaseTotal: progress.total,
+          currentItem: progress.filename
+        })
+      })
+
+      completed = 3
       report('reading')
       const openTranscript = await dependencies.openTranscript(transcriptUri)
 
-      completed = 3
+      completed = 4
       report('parsing')
       const parsed = await dependencies.parseTranscript({ chatId, openTranscript, mediaMap })
       if (parsed.messageCount === 0) throw new Error('No messages found in the chat file.')
 
-      completed = 4
+      completed = 5
       report('persisting')
       const lastMessage = await dependencies.getLastMessage(chatId)
       const importedAt = dependencies.now().toISOString()

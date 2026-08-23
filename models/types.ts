@@ -4,13 +4,32 @@ export interface Message {
   text: string | null
   mediaType: 'image' | 'video' | 'audio' | 'document' | null
   mediaUri: string | null
+  mediaFilename: string | null
+  mediaSize: number | null
+  mediaWidth: number | null
+  mediaHeight: number | null
+  mediaDuration: number | null
+  mediaPreviewUri: string | null
   timestamp: Date
   isEdited: boolean
   isMine: boolean
   isSystem: boolean
 }
 
-export type MediaMap = Map<string, string>
+export type MediaType = NonNullable<Message['mediaType']>
+
+export interface MediaAttachment {
+  filename: string
+  uri: string
+  type: MediaType
+  size: number
+  width: number | null
+  height: number | null
+  duration: number | null
+  previewUri: string | null
+}
+
+export type MediaMap = Map<string, MediaAttachment>
 
 export interface SavedChat {
   id: string
