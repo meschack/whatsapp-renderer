@@ -116,6 +116,30 @@ describe('media indexer', () => {
     })
   })
 
+  it('publishes each completed attachment before moving to the next candidate', async () => {
+    const candidates: MediaCandidate[] = [
+      { filename: 'first.opus', uri: 'file:///chat/first.opus', type: 'audio', size: 100 },
+      { filename: 'second.opus', uri: 'file:///chat/second.opus', type: 'audio', size: 200 }
+    ]
+    const published: string[] = []
+    const indexMedia = createMediaIndexer({
+      inspect: async () => ({
+        width: null,
+        height: null,
+        duration: null,
+        previewUri: null,
+        waveform: null
+      }),
+      yieldToMainThread: async () => {}
+    })
+
+    await indexMedia(candidates, undefined, undefined, async attachment => {
+      published.push(attachment.filename)
+    })
+
+    expect(published).toEqual(['first.opus', 'second.opus'])
+  })
+
   it('stops media inspection without publishing partial results when cancelled', async () => {
     const controller = new AbortController()
     const progress: MediaCandidate[] = []
