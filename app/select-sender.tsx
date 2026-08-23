@@ -5,6 +5,7 @@ import { View, Text, Pressable } from '@/src/tw'
 import { Ionicons } from '@expo/vector-icons'
 import { useRouter } from 'expo-router'
 import { FlatList } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function SelectSenderScreen() {
   const router = useRouter()
@@ -12,9 +13,12 @@ export default function SelectSenderScreen() {
 
   if (!chatData) {
     return (
-      <View className='flex-1 bg-wa-bg justify-center items-center'>
+      <SafeAreaView
+        edges={['bottom']}
+        style={{ flex: 1, backgroundColor: '#0B141A', justifyContent: 'center', alignItems: 'center' }}
+      >
         <Text className='text-wa-text-secondary text-base text-center mt-10'>No chat data loaded.</Text>
-      </View>
+      </SafeAreaView>
     )
   }
 
@@ -53,16 +57,17 @@ export default function SelectSenderScreen() {
   }
 
   return (
-    <View className='flex-1 bg-wa-bg pt-6'>
-      <Text className='text-lg font-bold text-wa-text-primary text-center mb-2'>Select Your Name</Text>
-      <Text className='text-sm text-wa-text-secondary text-center mb-6 px-6'>
-        Choose which participant you are in this conversation.
-      </Text>
-
+    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
+      <View className='pt-6'>
+        <Text className='text-lg font-bold text-wa-text-primary text-center mb-2'>Select Your Name</Text>
+        <Text className='text-sm text-wa-text-secondary text-center mb-6 px-6'>
+          Choose which participant you are in this conversation.
+        </Text>
+      </View>
       <FlatList
         data={chatData.participants}
         keyExtractor={item => item}
-        contentContainerStyle={{ paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12 }}
         renderItem={({ item }) => (
           <Pressable className='flex-row items-center py-4 px-3 gap-3' onPress={() => handleSelect(item)}>
             <View className='w-11 h-11 rounded-full bg-wa-header justify-center items-center'>
@@ -74,6 +79,6 @@ export default function SelectSenderScreen() {
         )}
         ItemSeparatorComponent={() => <View className='h-px bg-wa-divider ml-[68px]' />}
       />
-    </View>
+    </SafeAreaView>
   )
 }

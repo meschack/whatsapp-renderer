@@ -1,5 +1,6 @@
 import { openDatabaseSync } from 'expo-sqlite'
 import type { Message } from '@/models/types'
+import type { TimelineRecord } from '@/utils/chat-timeline'
 import { stripEditedMarker } from '@/utils/message-text'
 
 const db = openDatabaseSync('whatsapp-renderer.db')
@@ -111,17 +112,78 @@ function rowToMessage(row: MessageRow): Message {
   }
 }
 
-/**
- * Get a page of messages for a chat, ordered newest-first (for inverted list).
- */
-export function getMessagePage(chatId: string, limit: number, offset: number): Message[] {
-  const rows = db.getAllSync<MessageRow>(
-    'SELECT * FROM messages WHERE chatId = ? ORDER BY id DESC LIMIT ? OFFSET ?',
+export interface MessagePage {
+  records: TimelineRecord[]
+  hasMore: boolean
+}
+
+const MESSAGE_PAGE_COLUMNS =
+  'id, sender, text, mediaType, mediaUri, timestamp, isEdited, isMine, isSystem'
+
+function rowsToPage(rows: MessageRow[], limit: number, newestFirst: boolean): MessagePage {
+  const hasMore = rows.length > limit
+  const pageRows = rows.slice(0, limit)
+  if (newestFirst) pageRows.reverse()
+
+  return {
+    records: pageRows.map(row => ({ sequence: row.id, message: rowToMessage(row) })),
+    hasMore
+  }
+}
+
+/** Load the newest messages without blocking the JavaScript thread. */
+export async function getLatestMessagePage(chatId: string, limit: number): Promise<MessagePage> {
+  const rows = await db.getAllAsync<MessageRow>(
+    `SELECT ${MESSAGE_PAGE_COLUMNS}
+     FROM messages
+     WHERE chatId = ?
+     ORDER BY id DESC
+     LIMIT ?`,
     chatId,
-    limit,
-    offset
+    limit + 1
   )
-  return rows.map(rowToMessage)
+
+  return rowsToPage(rows, limit, true)
+}
+
+/** Load history using a stable keyset cursor instead of an increasingly expensive OFFSET. */
+export async function getOlderMessagePage(
+  chatId: string,
+  beforeSequence: number,
+  limit: number
+): Promise<MessagePage> {
+  const rows = await db.getAllAsync<MessageRow>(
+    `SELECT ${MESSAGE_PAGE_COLUMNS}
+     FROM messages
+     WHERE chatId = ? AND id < ?
+     ORDER BY id DESC
+     LIMIT ?`,
+    chatId,
+    beforeSequence,
+    limit + 1
+  )
+
+  return rowsToPage(rows, limit, true)
+}
+
+/** Reload the newer edge after the bounded window has discarded it. */
+export async function getNewerMessagePage(
+  chatId: string,
+  afterSequence: number,
+  limit: number
+): Promise<MessagePage> {
+  const rows = await db.getAllAsync<MessageRow>(
+    `SELECT ${MESSAGE_PAGE_COLUMNS}
+     FROM messages
+     WHERE chatId = ? AND id > ?
+     ORDER BY id ASC
+     LIMIT ?`,
+    chatId,
+    afterSequence,
+    limit + 1
+  )
+
+  return rowsToPage(rows, limit, false)
 }
 
 /**

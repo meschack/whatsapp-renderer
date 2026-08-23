@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { Alert, FlatList } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Directory, File } from 'expo-file-system'
 import * as DocumentPicker from 'expo-document-picker'
@@ -217,17 +217,20 @@ export default function HomeScreen() {
   // Loading overlay
   if (isLoading) {
     return (
-      <View className='flex-1 bg-wa-bg justify-center items-center gap-3'>
+      <SafeAreaView
+        edges={['bottom']}
+        style={{ flex: 1, backgroundColor: '#0B141A', justifyContent: 'center', alignItems: 'center', gap: 12 }}
+      >
         <ActivityIndicator size='large' color='#00A884' />
         <Text className='text-sm text-wa-text-secondary'>{statusText}</Text>
-      </View>
+      </SafeAreaView>
     )
   }
 
   // Empty state - no saved chats yet
   if (savedChats.length === 0) {
     return (
-      <View className='flex-1 bg-wa-bg'>
+      <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
         <View className='flex-1 justify-center items-center px-6'>
           <View className='mb-6 w-36 h-36 rounded-full bg-wa-header justify-center items-center'>
             <Ionicons name='chatbubbles' size={80} color='#00A884' />
@@ -262,19 +265,19 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
-      </View>
+      </SafeAreaView>
     )
   }
 
   // Chat list
   return (
-    <View className='flex-1 bg-wa-bg'>
+    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
       <FlatList
         data={savedChats}
         keyExtractor={chatKeyExtractor}
         renderItem={renderChatItem}
         ItemSeparatorComponent={ListSeparator}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 88 }}
         ListFooterComponent={
           <Pressable
             className='flex-row items-center justify-center gap-2 py-4 mt-2'
@@ -290,7 +293,7 @@ export default function HomeScreen() {
       <Pressable
         className='absolute right-5 w-14 h-14 rounded-full bg-wa-accent justify-center items-center'
         style={{
-          bottom: insets.bottom + 24,
+          bottom: insets.bottom + 16,
           elevation: 6,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 3 },
@@ -301,7 +304,7 @@ export default function HomeScreen() {
       >
         <Ionicons name='add' size={28} color='#FFFFFF' />
       </Pressable>
-    </View>
+    </SafeAreaView>
   )
 }
 

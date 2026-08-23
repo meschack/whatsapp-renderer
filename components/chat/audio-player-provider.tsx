@@ -1,216 +1,173 @@
+import { audioPlaybackStore } from '@/store/audio-playback-store'
+import {
+  AUDIO_BAR_COUNT,
+  hasUsableWaveformCoverage,
+  normalizeWaveformBuckets
+} from '@/utils/audio-presentation'
 import {
   requestRecordingPermissionsAsync,
   useAudioPlayer,
   useAudioPlayerStatus,
   useAudioSampleListener
 } from 'expo-audio'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 
 const PLAYBACK_RATES = [1, 1.5, 2] as const
-type PlaybackRate = (typeof PLAYBACK_RATES)[number]
+const MAX_WAVEFORM_CACHE = 100
 
-export const BAR_COUNT = 40
-const MIN_BAR_HEIGHT = 4
-const MAX_BAR_HEIGHT = 22
-
-function normalizeWaveform(buckets: number[]): number[] {
-  const max = Math.max(...buckets, 0.001)
-  return buckets.map(
-    v => MIN_BAR_HEIGHT + Math.pow(v / max, 0.6) * (MAX_BAR_HEIGHT - MIN_BAR_HEIGHT)
-  )
-}
-
-interface AudioPlayerState {
-  activeUri: string | null
-  isPlaying: boolean
-  progress: number
-  currentTime: number
-  duration: number
-  hasPlayed: boolean
-  playbackRate: PlaybackRate
-  waveforms: Map<string, number[]>
-}
-
-interface AudioPlayerActions {
+interface AudioPlayerControls {
   play: (uri: string) => Promise<void>
   pause: () => void
   seek: (fraction: number) => void
   cycleRate: () => void
 }
 
-interface AudioPlayerContextValue {
-  state: AudioPlayerState
-  actions: AudioPlayerActions
-}
-
-const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null)
+const AudioControlsContext = createContext<AudioPlayerControls | null>(null)
 
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
-  const [activeUri, setActiveUri] = useState<string | null>(null)
-  const [rateIndex, setRateIndex] = useState(0)
-  const [waveforms, setWaveforms] = useState<Map<string, number[]>>(new Map())
-  const pendingPlayRef = useRef(false)
+  const player = useAudioPlayer(null)
+  const status = useAudioPlayerStatus(player)
+  const statusRef = useRef(status)
+  statusRef.current = status
 
-  const waveformBucketsRef = useRef<Map<string, number[]>>(new Map())
   const activeUriRef = useRef<string | null>(null)
-  const currentTimeRef = useRef(0)
-  const durationRef = useRef(0)
-  const lastWaveformCommitRef = useRef(0)
+  const pendingPlayUriRef = useRef<string | null>(null)
+  const rateIndexRef = useRef(0)
+  const waveformBucketsRef = useRef<Map<string, number[]>>(new Map())
   const samplingPermissionRef = useRef<'unknown' | 'granted' | 'denied'>(
     process.env.EXPO_OS === 'android' ? 'unknown' : 'granted'
   )
 
-  const player = useAudioPlayer(null)
-  const status = useAudioPlayerStatus(player)
+  useEffect(() => {
+    const uri = activeUriRef.current
+    if (!uri) return
 
-  // Keep refs in sync for the sample listener (avoids stale closures)
-  activeUriRef.current = activeUri
-  currentTimeRef.current = status.currentTime
-  durationRef.current = status.duration
+    const progress = status.duration > 0 ? status.currentTime / status.duration : 0
+    audioPlaybackStore.updateActiveStatus({
+      isPlaying: status.playing,
+      progress,
+      currentTime: status.currentTime,
+      duration: status.duration,
+      hasPlayed: status.currentTime > 0 || status.playing
+    })
 
-  const progress = status.duration > 0 ? status.currentTime / status.duration : 0
-  const hasPlayed = status.currentTime > 0 || status.playing
-  const didFinish =
-    status.duration > 0 && !status.playing && status.currentTime >= status.duration - 0.1
+    if (status.duration > 0) audioPlaybackStore.setDuration(uri, status.duration)
+
+    if (pendingPlayUriRef.current === uri && status.duration > 0 && !status.playing) {
+      pendingPlayUriRef.current = null
+      player.play()
+    }
+  }, [player, status.currentTime, status.duration, status.playing])
 
   useAudioSampleListener(player, sample => {
     const uri = activeUriRef.current
-    const duration = durationRef.current
-    if (!uri || duration <= 0) return
+    const currentStatus = statusRef.current
+    if (!uri || currentStatus.duration <= 0) return
 
     const frames = sample.channels[0]?.frames
     if (!frames || frames.length === 0) return
 
     let sum = 0
-    for (let i = 0; i < frames.length; i++) sum += frames[i] * frames[i]
+    for (let index = 0; index < frames.length; index++) sum += frames[index] * frames[index]
     const rms = Math.sqrt(sum / frames.length)
-
     const bucketIndex = Math.min(
-      BAR_COUNT - 1,
-      Math.floor((currentTimeRef.current / duration) * BAR_COUNT)
+      AUDIO_BAR_COUNT - 1,
+      Math.floor((currentStatus.currentTime / currentStatus.duration) * AUDIO_BAR_COUNT)
     )
+    const buckets = waveformBucketsRef.current.get(uri) ?? new Array(AUDIO_BAR_COUNT).fill(0)
+    buckets[bucketIndex] = Math.max(buckets[bucketIndex], rms)
+    waveformBucketsRef.current.delete(uri)
+    waveformBucketsRef.current.set(uri, buckets)
 
-    const existing = waveformBucketsRef.current.get(uri) ?? new Array(BAR_COUNT).fill(0)
-    existing[bucketIndex] = Math.max(existing[bucketIndex], rms)
-    waveformBucketsRef.current.set(uri, existing)
-
-    const now = Date.now()
-    if (now - lastWaveformCommitRef.current < 120 && bucketIndex < BAR_COUNT - 1) {
-      return
+    while (waveformBucketsRef.current.size > MAX_WAVEFORM_CACHE) {
+      const oldest = waveformBucketsRef.current.keys().next().value
+      if (!oldest) break
+      waveformBucketsRef.current.delete(oldest)
     }
-
-    lastWaveformCommitRef.current = now
-    setWaveforms(prev => new Map(prev).set(uri, normalizeWaveform(existing)))
   })
 
   useEffect(() => {
-    if (!didFinish || !activeUri) return
-    const buckets = waveformBucketsRef.current.get(activeUri)
-    if (!buckets || buckets.every(v => v === 0)) return
-    setWaveforms(prev => new Map(prev).set(activeUri, normalizeWaveform(buckets)))
-  }, [didFinish, activeUri])
+    const uri = activeUriRef.current
+    const didFinish =
+      uri !== null &&
+      status.duration > 0 &&
+      !status.playing &&
+      status.currentTime >= status.duration - 0.1
+    if (!uri || !didFinish) return
 
-  useEffect(() => {
-    if (pendingPlayRef.current && status.duration > 0 && !status.playing) {
-      pendingPlayRef.current = false
-      player.play()
-    }
-  }, [status.duration, status.playing, player])
+    const buckets = waveformBucketsRef.current.get(uri)
+    if (!buckets || !hasUsableWaveformCoverage(buckets)) return
+    audioPlaybackStore.setWaveform(uri, normalizeWaveformBuckets(buckets))
+  }, [status.currentTime, status.duration, status.playing])
 
   const ensureSamplingPermission = useCallback(async () => {
-    if (process.env.EXPO_OS !== 'android') {
-      return true
-    }
-
-    if (samplingPermissionRef.current === 'granted') {
-      return true
-    }
+    if (process.env.EXPO_OS !== 'android' || samplingPermissionRef.current === 'granted') return
+    if (samplingPermissionRef.current === 'denied') return
 
     const response = await requestRecordingPermissionsAsync()
     samplingPermissionRef.current = response.granted ? 'granted' : 'denied'
-    return response.granted
   }, [])
 
   const play = useCallback(
     async (uri: string) => {
-      await ensureSamplingPermission()
+      void ensureSamplingPermission()
+      const currentStatus = statusRef.current
 
-      if (uri === activeUri) {
-        if (status.playing) {
-          player.pause()
-        } else if (didFinish) {
-          player.seekTo(0)
+      if (uri === activeUriRef.current) {
+        const didFinish =
+          currentStatus.duration > 0 &&
+          !currentStatus.playing &&
+          currentStatus.currentTime >= currentStatus.duration - 0.1
+
+        if (currentStatus.playing) player.pause()
+        else if (didFinish) {
+          await player.seekTo(0)
           player.play()
-        } else {
-          player.play()
-        }
-      } else {
-        setActiveUri(uri)
-        setRateIndex(0)
-        pendingPlayRef.current = true
-        lastWaveformCommitRef.current = 0
-        player.replace({ uri })
+        } else player.play()
+        return
       }
+
+      activeUriRef.current = uri
+      pendingPlayUriRef.current = uri
+      rateIndexRef.current = 0
+      audioPlaybackStore.setActiveUri(uri)
+      player.replace({ uri })
     },
-    [activeUri, player, status.playing, didFinish, ensureSamplingPermission]
+    [ensureSamplingPermission, player]
   )
 
-  const pause = useCallback(() => {
-    player.pause()
-  }, [player])
+  const pause = useCallback(() => player.pause(), [player])
 
   const seek = useCallback(
     (fraction: number) => {
-      if (status.duration > 0) {
-        player.seekTo(fraction * status.duration)
-      }
+      const duration = statusRef.current.duration
+      if (duration > 0) void player.seekTo(fraction * duration)
     },
-    [player, status.duration]
+    [player]
   )
 
   const cycleRate = useCallback(() => {
-    const nextIndex = (rateIndex + 1) % PLAYBACK_RATES.length
-    setRateIndex(nextIndex)
-    player.setPlaybackRate(PLAYBACK_RATES[nextIndex])
-  }, [rateIndex, player])
+    const nextIndex = (rateIndexRef.current + 1) % PLAYBACK_RATES.length
+    rateIndexRef.current = nextIndex
+    const rate = PLAYBACK_RATES[nextIndex]
+    player.setPlaybackRate(rate)
+    audioPlaybackStore.setPlaybackRate(rate)
+  }, [player])
 
-  const state: AudioPlayerState = useMemo(
-    () => ({
-      activeUri,
-      isPlaying: status.playing,
-      progress,
-      currentTime: status.currentTime,
-      duration: status.duration,
-      hasPlayed,
-      playbackRate: PLAYBACK_RATES[rateIndex],
-      waveforms
-    }),
-    [
-      activeUri,
-      status.playing,
-      progress,
-      status.currentTime,
-      status.duration,
-      hasPlayed,
-      rateIndex,
-      waveforms
-    ]
+  useEffect(
+    () => () => {
+      audioPlaybackStore.setActiveUri(null)
+    },
+    []
   )
 
-  const actions: AudioPlayerActions = useMemo(
-    () => ({ play, pause, seek, cycleRate }),
-    [play, pause, seek, cycleRate]
-  )
+  const controls = useMemo(() => ({ play, pause, seek, cycleRate }), [play, pause, seek, cycleRate])
 
-  const value = useMemo(() => ({ state, actions }), [state, actions])
-
-  return <AudioPlayerContext.Provider value={value}>{children}</AudioPlayerContext.Provider>
+  return <AudioControlsContext.Provider value={controls}>{children}</AudioControlsContext.Provider>
 }
 
-export function useSharedAudioPlayer() {
-  const ctx = useContext(AudioPlayerContext)
-  if (!ctx) {
-    throw new Error('useSharedAudioPlayer must be used within AudioPlayerProvider')
-  }
-  return ctx
+export function useAudioPlayerControls() {
+  const controls = useContext(AudioControlsContext)
+  if (!controls) throw new Error('useAudioPlayerControls must be used within AudioPlayerProvider')
+  return controls
 }

@@ -1,10 +1,30 @@
 import type { Message } from '@/models/types'
+import { useAudioRowState } from '@/hooks/use-audio-row-state'
 import { Pressable, Text, View } from '@/src/tw'
+import {
+  AUDIO_BAR_COUNT,
+  formatPlaybackRate,
+  getRemainingPlaybackMs,
+  getScrubberLeft,
+  getVisualAudioProgress,
+  shouldShowPlaybackRate
+} from '@/utils/audio-presentation'
 import { Ionicons } from '@expo/vector-icons'
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
-import { memo, useCallback, useMemo, useState } from 'react'
-import { type GestureResponderEvent, type LayoutChangeEvent } from 'react-native'
-import { BAR_COUNT, useSharedAudioPlayer } from './audio-player-provider'
+import { useRecyclingState } from '@shopify/flash-list'
+import { memo, useCallback, useEffect, useMemo } from 'react'
+import {
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+  useWindowDimensions
+} from 'react-native'
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming
+} from 'react-native-reanimated'
+import { useAudioPlayerControls } from './audio-player-provider'
 import { MessageMeta } from './message-meta'
 
 interface AudioPlayerProps {
@@ -12,8 +32,9 @@ interface AudioPlayerProps {
   showMeta?: boolean
 }
 
-const DEFAULT_WAVEFORM_WIDTH = 150
-const WAVEFORM_BAR_GAP = 1.25
+const DEFAULT_WAVEFORM_WIDTH = 180
+const SCRUBBER_RADIUS = 6
+const TRACK_SIDE_GUTTER = SCRUBBER_RADIUS
 
 export const AudioPlayer = memo(function AudioPlayer({
   message,
@@ -21,19 +42,20 @@ export const AudioPlayer = memo(function AudioPlayer({
 }: AudioPlayerProps) {
   const uri = message.mediaUri
   const isMine = message.isMine
-  const { state, actions } = useSharedAudioPlayer()
-  const [waveformWidth, setWaveformWidth] = useState(DEFAULT_WAVEFORM_WIDTH)
-  const metadataPlayer = useAudioPlayer(uri ? { uri } : null)
-  const metadataStatus = useAudioPlayerStatus(metadataPlayer)
+  const actions = useAudioPlayerControls()
+  const state = useAudioRowState(uri ?? '')
+  const { width: screenWidth } = useWindowDimensions()
+  const [waveformWidth, setWaveformWidth] = useRecyclingState(DEFAULT_WAVEFORM_WIDTH, [message.id])
+  const animatedProgress = useSharedValue(0)
+  const playerWidth = Math.min(286, screenWidth * 0.76)
 
-  const isActive = uri !== null && state.activeUri === uri
-  const progress = isActive ? state.progress : 0
-  const isPlaying = isActive && state.isPlaying
-  const liveCurrentTime = isActive && (state.isPlaying || state.hasPlayed) ? state.currentTime : 0
-  const totalDuration = metadataStatus.duration || (isActive ? state.duration : 0)
+  const progress = getVisualAudioProgress(state)
+  const isPlaying = state.isActive && state.isPlaying
+  const showPlaybackRate = shouldShowPlaybackRate(state)
+  const liveCurrentTime = isPlaying ? state.currentTime : 0
 
   const displayDuration =
-    liveCurrentTime > 0 ? formatSeconds(liveCurrentTime) : formatSeconds(totalDuration)
+    liveCurrentTime > 0 ? formatSeconds(liveCurrentTime) : formatSeconds(state.duration)
 
   const handlePlayPause = useCallback(() => {
     if (uri) {
@@ -43,81 +65,123 @@ export const AudioPlayer = memo(function AudioPlayer({
 
   const handleSeek = useCallback(
     (e: GestureResponderEvent) => {
-      if (isActive && waveformWidth > 0) {
-        const fraction = Math.max(0, Math.min(1, e.nativeEvent.locationX / waveformWidth))
+      if (state.isActive && waveformWidth > 0) {
+        const fraction = Math.max(
+          0,
+          Math.min(1, (e.nativeEvent.locationX - TRACK_SIDE_GUTTER) / waveformWidth)
+        )
+        animatedProgress.value = fraction
         actions.seek(fraction)
       }
     },
-    [isActive, actions, waveformWidth]
+    [state.isActive, actions, animatedProgress, waveformWidth]
   )
 
-  const handleWaveformLayout = useCallback((e: LayoutChangeEvent) => {
-    setWaveformWidth(e.nativeEvent.layout.width)
-  }, [])
+  const handleWaveformLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      setWaveformWidth(e.nativeEvent.layout.width)
+    },
+    [setWaveformWidth]
+  )
 
   const bars = useMemo(() => {
-    if (uri && state.waveforms.has(uri)) {
-      return state.waveforms.get(uri)!
+    return state.waveform ?? getFallbackWaveform(uri ?? 'voice-note')
+  }, [uri, state.waveform])
+
+  useEffect(() => {
+    cancelAnimation(animatedProgress)
+    if (!isPlaying || state.duration <= 0) {
+      animatedProgress.value = 0
+      return
     }
 
-    return generateFallbackWaveform(uri ?? 'voice-note')
-  }, [uri, state.waveforms])
+    animatedProgress.value = withTiming(1, {
+      duration: getRemainingPlaybackMs(progress, state.duration, state.playbackRate),
+      easing: Easing.linear
+    })
+  }, [animatedProgress, isPlaying, progress, state.duration, state.playbackRate])
 
-  const dotPosition =
-    waveformWidth > 0 ? Math.max(0, Math.min(waveformWidth - 14, progress * waveformWidth - 7)) : 0
+  const animatedDotStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: animatedProgress.value * waveformWidth }]
+  }))
 
   const avatar = (
-    <View className='bg-wa-header/90 relative size-12 items-center justify-center rounded-full'>
-      <Ionicons name='person' size={22} color='#B7C4CF' />
-      <View className='bg-wa-bg absolute -right-0.5 -bottom-0.5 size-5 items-center justify-center rounded-full'>
-        <Ionicons name='mic' size={13} color='#53BDEB' />
+    <View className='bg-wa-header/90 relative size-10 items-center justify-center rounded-full'>
+      <Ionicons name='person' size={20} color='#B7C4CF' />
+      <View className='bg-wa-bg absolute -bottom-0.5 -left-0.5 size-4.5 items-center justify-center rounded-full'>
+        <Ionicons name='mic' size={11} color='#53BDEB' />
       </View>
     </View>
   )
 
+  const trailingControl = showPlaybackRate ? (
+    <Pressable
+      onPress={actions.cycleRate}
+      className='h-7 w-11 items-center justify-center rounded-full'
+      style={{ backgroundColor: 'rgba(0, 0, 0, 0.58)' }}
+    >
+      <Text className='text-[12px] font-medium text-white'>
+        {formatPlaybackRate(state.playbackRate)}
+      </Text>
+    </Pressable>
+  ) : (
+    avatar
+  )
+
   return (
-    <View className='w-62.5 max-w-full flex-row items-center gap-3'>
-      {isMine && avatar}
+    <View className='max-w-full flex-row items-center' style={{ width: playerWidth }}>
+      <Pressable onPress={handlePlayPause} className='h-11 w-10 items-center justify-center'>
+        <Ionicons name={isPlaying ? 'pause' : 'play'} size={26} color='#AEBAC1' />
+      </Pressable>
 
-      <View className={`flex-1 overflow-hidden ${showMeta ? 'gap-2' : 'gap-0'}`}>
-        <View className='flex-row items-center gap-3'>
-          <Pressable onPress={handlePlayPause} className='h-9 w-9 items-center justify-center'>
-            <Ionicons
-              name={isPlaying ? 'pause' : 'play'}
-              size={30}
-              color={isMine ? '#E9EDEF' : '#D7D7D7'}
-            />
-          </Pressable>
-
-          <Pressable onPress={handleSeek} onLayout={handleWaveformLayout} className='flex-1 py-1'>
-            <View className='relative h-8 justify-center overflow-hidden'>
-              <View className='flex-row items-center' style={{ gap: WAVEFORM_BAR_GAP }}>
-                {bars.map((barHeight, index) => {
-                  const barActive = index / BAR_COUNT <= progress
-                  return (
-                    <View
-                      key={index}
-                      className={
-                        barActive
-                          ? 'bg-wa-waveform-active rounded-full'
-                          : 'rounded-full bg-white/38'
-                      }
-                      style={{ height: barHeight, width: 3 }}
-                    />
-                  )
-                })}
-              </View>
-
-              <View
-                className='absolute top-1/2 h-4 w-4 rounded-full bg-[#53BDEB]'
-                style={{ left: dotPosition, marginTop: -8 }}
-              />
+      <View className='mx-1 flex-1 overflow-hidden'>
+        <Pressable onPress={handleSeek} className='py-0.5'>
+          <View
+            onLayout={handleWaveformLayout}
+            className='relative h-7 justify-center overflow-visible'
+            style={{ marginHorizontal: TRACK_SIDE_GUTTER }}
+          >
+            <View className='flex-row items-center justify-between'>
+              {bars.map((barHeight, index) => {
+                const barActive = progress > 0 && (index + 0.5) / bars.length <= progress
+                return (
+                  <View
+                    key={index}
+                    style={{
+                      backgroundColor: barActive
+                        ? '#F1F4F5'
+                        : isMine
+                          ? 'rgba(255,255,255,0.36)'
+                          : '#6F787D',
+                      borderRadius: 2,
+                      height: barHeight,
+                      width: 2
+                    }}
+                  />
+                )
+              })}
             </View>
-          </Pressable>
-        </View>
+
+            <Animated.View
+              style={[
+                {
+                  backgroundColor: '#53BDEB',
+                  borderRadius: SCRUBBER_RADIUS,
+                  height: SCRUBBER_RADIUS * 2,
+                  left: getScrubberLeft(0, waveformWidth, SCRUBBER_RADIUS),
+                  marginTop: -SCRUBBER_RADIUS,
+                  position: 'absolute',
+                  top: '50%',
+                  width: SCRUBBER_RADIUS * 2
+                },
+                animatedDotStyle
+              ]}
+            />
+          </View>
+        </Pressable>
 
         {showMeta && (
-          <View className='flex-row items-center justify-between pl-1'>
+          <View className='mt-0.5 flex-row items-center justify-between px-1.5'>
             <Text className={`text-[11px] ${isMine ? 'text-white/65' : 'text-wa-text-secondary'}`}>
               {displayDuration}
             </Text>
@@ -126,7 +190,7 @@ export const AudioPlayer = memo(function AudioPlayer({
         )}
       </View>
 
-      {!isMine && avatar}
+      <View className='ml-2 w-11 items-center justify-center'>{trailingControl}</View>
     </View>
   )
 })
@@ -141,24 +205,35 @@ const formatSeconds = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-function generateFallbackWaveform(seedKey: string): number[] {
+const fallbackWaveforms = new Map<string, number[]>()
+const MAX_FALLBACK_WAVEFORMS = 200
+
+function getFallbackWaveform(seedKey: string): number[] {
+  const cached = fallbackWaveforms.get(seedKey)
+  if (cached) return cached
+
   let seed = hashString(seedKey)
-  const base = Array.from({ length: BAR_COUNT }, (_, index) => {
+  const base = Array.from({ length: AUDIO_BAR_COUNT }, (_, index) => {
     seed = (seed * 1664525 + 1013904223) >>> 0
     const noise = seed / 0xffffffff
-    const envelope = 0.4 + 0.35 * Math.sin((index / BAR_COUNT) * Math.PI * 2.8 + noise * 2.4)
-    const detail = 0.45 + noise * 0.55
-    return 6 + Math.max(0.15, envelope + detail - 0.25) * 8
+    const envelope = 0.7 + 0.3 * Math.sin((index / AUDIO_BAR_COUNT) * Math.PI * 3.2 + 0.6)
+    return 3 + Math.pow(noise, 1.25) * 15 * envelope
   })
 
-  return smoothWaveform(base)
+  const waveform = smoothWaveform(base)
+  fallbackWaveforms.set(seedKey, waveform)
+  if (fallbackWaveforms.size > MAX_FALLBACK_WAVEFORMS) {
+    const oldest = fallbackWaveforms.keys().next().value
+    if (oldest) fallbackWaveforms.delete(oldest)
+  }
+  return waveform
 }
 
 function smoothWaveform(values: number[]): number[] {
   return values.map((value, index) => {
     const previous = values[index - 1] ?? value
     const next = values[index + 1] ?? value
-    return Math.round((previous + value * 2 + next) / 4)
+    return Math.round((previous + value * 4 + next) / 6)
   })
 }
 

@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": { "supportsTablet": true, "bundleIdentifier": "com.godwingbewezoun.whatsapprenderer" },
     "android": {
+      "versionCode": 3,
       "predictiveBackGestureEnabled": false,
       "package": "com.godwingbewezoun.whatsapprenderer"
     },

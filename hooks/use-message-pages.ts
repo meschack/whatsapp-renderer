@@ -1,143 +1,216 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { getMessagePage } from '@/store/message-database'
-import type { Message } from '@/models/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  getLatestMessagePage,
+  getNewerMessagePage,
+  getOlderMessagePage,
+  type MessagePage
+} from '@/store/message-database'
+import {
+  buildTimelineItems,
+  mergeTimelineWindow,
+  type TimelineItem,
+  type TimelineRecord
+} from '@/utils/chat-timeline'
 
-export type ListItem =
-  | { type: 'date'; id: string; date: string }
-  | { type: 'message'; id: string; message: Message; showSender: boolean }
+export type ListItem = TimelineItem
 
-const PAGE_SIZE = 50
+const DEFAULT_PAGE_SIZE = 100
+const DEFAULT_MAX_MESSAGES = 600
 
-function formatDateLabel(date: Date): string {
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-
-  if (date.toDateString() === today.toDateString()) return 'Today'
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
-
-  return date.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  })
+interface MessageRepository {
+  latest: (chatId: string, limit: number) => Promise<MessagePage>
+  older: (chatId: string, beforeSequence: number, limit: number) => Promise<MessagePage>
+  newer: (chatId: string, afterSequence: number, limit: number) => Promise<MessagePage>
 }
 
-/**
- * Convert a page of messages (newest-first from SQL) into ListItems
- * with date separators and sender grouping.
- *
- * Since the list is inverted, "previous" in visual terms means newer messages.
- * lastMessageOfPrevPage is the last item currently in the list (the oldest message loaded so far).
- */
-function buildPageItems(messages: Message[], lastMessageOfPrevPage: Message | null): ListItem[] {
-  const items: ListItem[] = []
-
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i]
-
-    // Determine the message that comes "after" this one chronologically
-    // (i.e., the newer message, which is at index i-1 since we're newest-first)
-    const newerMsg = i === 0 ? lastMessageOfPrevPage : messages[i - 1]
-
-    // Insert date separator when the date changes between this message and the newer one
-    // In an inverted list, date separators appear below the messages of that date
-    const msgDateStr = msg.timestamp.toDateString()
-    const newerDateStr = newerMsg?.timestamp.toDateString()
-
-    if (newerDateStr && newerDateStr !== msgDateStr) {
-      // The newer message has a different date, so we insert a separator for the newer date
-      items.push({
-        type: 'date',
-        id: `date-${newerDateStr}`,
-        date: formatDateLabel(newerMsg!.timestamp)
-      })
-    }
-
-    // Determine if we should show the sender name
-    // In the inverted list (newest first), the "next" message visually below is at i+1
-    const olderMsg = i < messages.length - 1 ? messages[i + 1] : null
-    const showSender = !msg.isSystem && msg.sender !== olderMsg?.sender
-
-    items.push({
-      type: 'message',
-      id: msg.id,
-      message: msg,
-      showSender
-    })
-  }
-
-  return items
+const messageRepository: MessageRepository = {
+  latest: getLatestMessagePage,
+  older: getOlderMessagePage,
+  newer: getNewerMessagePage
 }
 
-export function useMessagePages(chatId: string, totalCount: number) {
-  const [items, setItems] = useState<ListItem[]>([])
-  const [hasMore, setHasMore] = useState(true)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const offsetRef = useRef(0)
-  const allMessagesRef = useRef<Message[]>([])
-  const loadedRef = useRef(false)
+interface MessagePagesOptions {
+  pageSize?: number
+  maxMessages?: number
+  repository?: MessageRepository
+  onPageLoad?: (event: { direction: 'initial' | 'older' | 'newer'; durationMs: number }) => void
+}
 
-  // Load first page on mount
+export function useMessagePages(chatId: string, options: MessagePagesOptions = {}) {
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE
+  const maxMessages = options.maxMessages ?? DEFAULT_MAX_MESSAGES
+  const repository = options.repository ?? messageRepository
+  const onPageLoadRef = useRef(options.onPageLoad)
+  onPageLoadRef.current = options.onPageLoad
+
+  const [records, setRecords] = useState<TimelineRecord[]>([])
+  const [hasOlder, setHasOlder] = useState(false)
+  const [hasNewer, setHasNewer] = useState(false)
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false)
+  const [isLoadingNewer, setIsLoadingNewer] = useState(false)
+
+  const recordsRef = useRef<TimelineRecord[]>([])
+  const hasOlderRef = useRef(false)
+  const hasNewerRef = useRef(false)
+  const generationRef = useRef(0)
+  const inFlightRef = useRef({ older: false, newer: false })
+
+  const replaceRecords = useCallback((next: TimelineRecord[]) => {
+    recordsRef.current = next
+    setRecords(next)
+  }, [])
+
+  const replaceHasOlder = useCallback((next: boolean) => {
+    hasOlderRef.current = next
+    setHasOlder(next)
+  }, [])
+
+  const replaceHasNewer = useCallback((next: boolean) => {
+    hasNewerRef.current = next
+    setHasNewer(next)
+  }, [])
+
   useEffect(() => {
-    if (loadedRef.current) return
-    loadedRef.current = true
+    const generation = ++generationRef.current
+    recordsRef.current = []
+    hasOlderRef.current = false
+    hasNewerRef.current = false
+    inFlightRef.current = { older: false, newer: false }
+    setRecords([])
+    setHasOlder(false)
+    setHasNewer(false)
+    setIsLoadingOlder(false)
+    setIsLoadingNewer(false)
 
-    const messages = getMessagePage(chatId, PAGE_SIZE, 0)
-    allMessagesRef.current = messages
-    offsetRef.current = messages.length
-    setHasMore(messages.length < totalCount)
-
-    // Build items — no previous page for the first load
-    const pageItems = buildPageItems(messages, null)
-
-    // Add date separator for the first (newest) message's date at the top
-    if (messages.length > 0) {
-      const firstDate = messages[0].timestamp
-      pageItems.unshift({
-        type: 'date',
-        id: `date-${firstDate.toDateString()}`,
-        date: formatDateLabel(firstDate)
-      })
-    }
-
-    setItems(pageItems)
-  }, [chatId, totalCount])
-
-  const loadMore = useCallback(() => {
-    if (!hasMore || isLoadingMore) return
-
-    setIsLoadingMore(true)
-
-    const newMessages = getMessagePage(chatId, PAGE_SIZE, offsetRef.current)
-
-    if (newMessages.length === 0) {
-      setHasMore(false)
-      setIsLoadingMore(false)
+    if (!chatId) {
+      setIsInitialLoading(false)
       return
     }
 
-    const lastOfPrev = allMessagesRef.current[allMessagesRef.current.length - 1] ?? null
-    allMessagesRef.current = [...allMessagesRef.current, ...newMessages]
-    offsetRef.current += newMessages.length
-    setHasMore(offsetRef.current < totalCount)
+    setIsInitialLoading(true)
+    const startedAt = performance.now()
 
-    const pageItems = buildPageItems(newMessages, lastOfPrev)
+    void repository.latest(chatId, pageSize).then(
+      page => {
+        if (generationRef.current !== generation) return
+        replaceRecords(page.records)
+        replaceHasOlder(page.hasMore)
+        replaceHasNewer(false)
+        onPageLoadRef.current?.({
+          direction: 'initial',
+          durationMs: performance.now() - startedAt
+        })
+        setIsInitialLoading(false)
+      },
+      error => {
+        if (generationRef.current !== generation) return
+        setIsInitialLoading(false)
+        console.error('Failed to load the initial message page', error)
+      }
+    )
 
-    // Add final date separator for the oldest message in this page
-    // (only if it's the last page or the date differs from what comes next)
-    if (newMessages.length > 0 && newMessages.length < PAGE_SIZE) {
-      const oldestMsg = newMessages[newMessages.length - 1]
-      pageItems.push({
-        type: 'date',
-        id: `date-${oldestMsg.timestamp.toDateString()}-end`,
-        date: formatDateLabel(oldestMsg.timestamp)
-      })
+    return () => {
+      if (generationRef.current === generation) generationRef.current++
     }
+  }, [chatId, pageSize, repository, replaceHasNewer, replaceHasOlder, replaceRecords])
 
-    setItems(prev => [...prev, ...pageItems])
-    setIsLoadingMore(false)
-  }, [chatId, hasMore, isLoadingMore, totalCount])
+  const loadOlder = useCallback(async () => {
+    if (!chatId || !hasOlderRef.current || inFlightRef.current.older) return
+    const first = recordsRef.current[0]
+    if (!first) return
 
-  return { items, loadMore, hasMore, isLoadingMore }
+    inFlightRef.current.older = true
+    setIsLoadingOlder(true)
+    const generation = generationRef.current
+    const requestedCursor = first.sequence
+    const startedAt = performance.now()
+
+    try {
+      const page = await repository.older(chatId, requestedCursor, pageSize)
+      if (
+        generationRef.current !== generation ||
+        recordsRef.current[0]?.sequence !== requestedCursor
+      ) {
+        return
+      }
+
+      const merged = mergeTimelineWindow(
+        recordsRef.current,
+        page.records,
+        'older',
+        maxMessages
+      )
+      replaceRecords(merged.records)
+      replaceHasOlder(page.hasMore)
+      if (merged.trimmedNewer) replaceHasNewer(true)
+      onPageLoadRef.current?.({
+        direction: 'older',
+        durationMs: performance.now() - startedAt
+      })
+    } catch (error) {
+      console.error('Failed to load older messages', error)
+    } finally {
+      if (generationRef.current === generation) {
+        inFlightRef.current.older = false
+        setIsLoadingOlder(false)
+      }
+    }
+  }, [chatId, maxMessages, pageSize, repository, replaceHasNewer, replaceHasOlder, replaceRecords])
+
+  const loadNewer = useCallback(async () => {
+    if (!chatId || !hasNewerRef.current || inFlightRef.current.newer) return
+    const last = recordsRef.current[recordsRef.current.length - 1]
+    if (!last) return
+
+    inFlightRef.current.newer = true
+    setIsLoadingNewer(true)
+    const generation = generationRef.current
+    const requestedCursor = last.sequence
+    const startedAt = performance.now()
+
+    try {
+      const page = await repository.newer(chatId, requestedCursor, pageSize)
+      if (
+        generationRef.current !== generation ||
+        recordsRef.current[recordsRef.current.length - 1]?.sequence !== requestedCursor
+      ) {
+        return
+      }
+
+      const merged = mergeTimelineWindow(
+        recordsRef.current,
+        page.records,
+        'newer',
+        maxMessages
+      )
+      replaceRecords(merged.records)
+      replaceHasNewer(page.hasMore)
+      if (merged.trimmedOlder) replaceHasOlder(true)
+      onPageLoadRef.current?.({
+        direction: 'newer',
+        durationMs: performance.now() - startedAt
+      })
+    } catch (error) {
+      console.error('Failed to load newer messages', error)
+    } finally {
+      if (generationRef.current === generation) {
+        inFlightRef.current.newer = false
+        setIsLoadingNewer(false)
+      }
+    }
+  }, [chatId, maxMessages, pageSize, repository, replaceHasNewer, replaceHasOlder, replaceRecords])
+
+  const items = useMemo(() => buildTimelineItems(records), [records])
+
+  return {
+    items,
+    loadOlder,
+    loadNewer,
+    hasOlder,
+    hasNewer,
+    isInitialLoading,
+    isLoadingOlder,
+    isLoadingNewer
+  }
 }

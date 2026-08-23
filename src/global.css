@@ -5,12 +5,12 @@
 @theme {
   /* WhatsApp Dark Mode Colors */
   --color-wa-bg: #0b141a;
-  --color-wa-header: #1f2c34;
-  --color-wa-input: #1f2c34;
-  --color-wa-bubble-mine: #144d37;
-  --color-wa-bubble-other: #222627;
-  --color-wa-text-primary: #e9edef;
-  --color-wa-text-secondary: #8696a0;
+  --color-wa-header: #202c33;
+  --color-wa-input: #2a3942;
+  --color-wa-bubble-mine: #075e48;
+  --color-wa-bubble-other: #202c2c;
+  --color-wa-text-primary: #f1f4f5;
+  --color-wa-text-secondary: #aebac1;
   --color-wa-text-sender: #06cf9c;
   --color-wa-text-timestamp: #828385;
   --color-wa-accent: #00a884;
@@ -28,7 +28,7 @@
     --font-mono: monospace;
     --font-rounded: normal;
     --font-serif: serif;
-    --font-sans: normal;
+    --font-sans: Satoshi;
   }
 }
 

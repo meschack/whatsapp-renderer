@@ -31,8 +31,22 @@ export const View = (props: ViewProps) => {
 }
 View.displayName = 'CSS(View)'
 
-export const Text = (props: React.ComponentProps<typeof RNText> & { className?: string }) => {
-  return useCssElement(RNText, props, { className: 'style' })
+export const Text = ({
+  className,
+  style,
+  ...props
+}: React.ComponentProps<typeof RNText> & { className?: string }) => {
+  const fontFamily = className?.includes('font-bold')
+    ? 'Satoshi-Bold'
+    : className?.includes('font-semibold') || className?.includes('font-medium')
+      ? 'Satoshi-Medium'
+      : 'Satoshi'
+
+  return useCssElement(
+    RNText,
+    { ...props, className, style: [{ fontFamily }, style] },
+    { className: 'style' }
+  )
 }
 Text.displayName = 'CSS(Text)'
 

@@ -7,9 +7,10 @@ const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g
 interface RichTextProps {
   text: string
   isMine: boolean
+  trailing?: ReactNode
 }
 
-export const RichText = memo(function RichText({ text, isMine }: RichTextProps) {
+export const RichText = memo(function RichText({ text, isMine, trailing }: RichTextProps) {
   const handleLinkPress = useCallback((url: string) => {
     Linking.openURL(url)
   }, [])
@@ -17,20 +18,21 @@ export const RichText = memo(function RichText({ text, isMine }: RichTextProps) 
   const parts = useMemo(() => parseTextWithLinks(text), [text])
 
   return (
-    <Text className='text-wa-text-primary shrink text-[14.5px] leading-5'>
+    <Text className='text-wa-text-primary shrink text-[15px] leading-5'>
       {parts.map((part, i) =>
         part.type === 'text' ? (
           (part.value as ReactNode)
         ) : (
           <Text
             key={i}
-            className='text-[14.5px] leading-5 text-[#25d366] underline'
+            className='text-[15px] leading-5 text-[#25d366] underline'
             onPress={() => handleLinkPress(part.value)}
           >
             {part.value}
           </Text>
         )
       )}
+      {trailing}
     </Text>
   )
 })

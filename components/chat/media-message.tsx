@@ -2,18 +2,18 @@ import type { Message } from '@/models/types'
 import { Pressable, Text, View } from '@/src/tw'
 import { Image } from '@/src/tw/image'
 import { Ionicons } from '@expo/vector-icons'
-import type { ImageLoadEventData } from 'expo-image'
 import { useVideoPlayer, VideoView } from 'expo-video'
-import { memo, useCallback, useState } from 'react'
+import { memo, useCallback } from 'react'
 import { Modal, useWindowDimensions } from 'react-native'
 import { AudioPlayer } from './audio-player'
+import { useRecyclingState } from '@shopify/flash-list'
 
 interface MediaMessageProps {
   message: Message
 }
 
 export const MediaMessage = memo(function MediaMessage({ message }: MediaMessageProps) {
-  const [imageModalVisible, setImageModalVisible] = useState(false)
+  const [imageModalVisible, setImageModalVisible] = useRecyclingState(false, [message.id])
 
   if (!message.mediaType) return null
 
@@ -36,7 +36,7 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
 
   switch (message.mediaType) {
     case 'image': {
-      if (message.mediaUri.toUpperCase().includes('STICKER')) {
+      if (isStickerUri(message.mediaUri)) {
         return <Sticker uri={message.mediaUri} />
       }
       return (
@@ -68,28 +68,31 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
   }
 })
 
-const IMAGE_MAX_WIDTH = 250
-const IMAGE_MIN_HEIGHT = 100
-const IMAGE_MAX_HEIGHT = 350
+function isStickerUri(uri: string): boolean {
+  const encodedFilename = uri.split('/').pop()?.split(/[?#]/)[0] ?? ''
+  let filename = encodedFilename
 
-const STICKER_SIZE = IMAGE_MAX_WIDTH / 2
+  try {
+    filename = decodeURIComponent(encodedFilename)
+  } catch {
+    // A malformed URI should still render as an ordinary image, not crash the chat.
+  }
+
+  return /^(?:STK-|STICKER)/i.test(filename) && filename.toLowerCase().endsWith('.webp')
+}
+
+const MEDIA_MAX_WIDTH = 300
+const MEDIA_ASPECT_RATIO = 1.38
+
+const STICKER_SIZE = 128
 
 const Sticker = memo(function Sticker({ uri }: { uri: string }) {
-  const [height, setHeight] = useState(STICKER_SIZE)
-
-  const handleLoad = useCallback((e: ImageLoadEventData) => {
-    const { width: srcW, height: srcH } = e.source
-    if (srcW > 0 && srcH > 0) {
-      setHeight(Math.round(STICKER_SIZE * (srcH / srcW)))
-    }
-  }, [])
-
   return (
     <Image
       source={{ uri }}
+      recyclingKey={uri}
       className='object-contain'
-      style={{ width: STICKER_SIZE, height }}
-      onLoad={handleLoad}
+      style={{ width: STICKER_SIZE, height: STICKER_SIZE }}
     />
   )
 })
@@ -107,25 +110,18 @@ const ChatImage = memo(function ChatImage({
   onOpenModal,
   onCloseModal
 }: ChatImageProps) {
-  const [imageHeight, setImageHeight] = useState(IMAGE_MAX_WIDTH)
   const { width: screenWidth } = useWindowDimensions()
-
-  const handleLoad = useCallback((e: ImageLoadEventData) => {
-    const { width: srcW, height: srcH } = e.source
-    if (srcW > 0 && srcH > 0) {
-      const computed = Math.round(IMAGE_MAX_WIDTH * (srcH / srcW))
-      setImageHeight(Math.max(IMAGE_MIN_HEIGHT, Math.min(IMAGE_MAX_HEIGHT, computed)))
-    }
-  }, [])
+  const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
+  const previewHeight = previewWidth / MEDIA_ASPECT_RATIO
 
   return (
     <>
       <Pressable onPress={onOpenModal}>
         <Image
           source={{ uri }}
+          recyclingKey={uri}
           className='rounded-lg object-cover'
-          style={{ width: IMAGE_MAX_WIDTH, height: imageHeight }}
-          onLoad={handleLoad}
+          style={{ width: previewWidth, height: previewHeight }}
         />
       </Pressable>
       {isModalVisible && (
@@ -141,6 +137,7 @@ const ChatImage = memo(function ChatImage({
           >
             <Image
               source={{ uri }}
+              recyclingKey={`modal-${uri}`}
               className='object-contain'
               style={{ width: screenWidth, height: '80%' }}
             />
@@ -169,12 +166,16 @@ const DocumentMessage = memo(function DocumentMessage({ uri }: { uri: string }) 
 
 // Only create the native video player when the user taps play
 const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }) {
-  const [activated, setActivated] = useState(false)
+  const [activated, setActivated] = useRecyclingState(false, [uri])
+  const { width: screenWidth } = useWindowDimensions()
+  const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
+  const previewHeight = previewWidth / MEDIA_ASPECT_RATIO
 
   if (!activated) {
     return (
       <Pressable
-        className='h-62.5 w-62.5 items-center justify-center overflow-hidden rounded-lg bg-black/50'
+        className='items-center justify-center overflow-hidden rounded-lg bg-black/50'
+        style={{ width: previewWidth, height: previewHeight }}
         onPress={() => setActivated(true)}
       >
         <View className='size-14 items-center justify-center rounded-full bg-white/20'>
@@ -184,10 +185,10 @@ const LazyVideoMessage = memo(function LazyVideoMessage({ uri }: { uri: string }
     )
   }
 
-  return <ActiveVideoPlayer uri={uri} />
+  return <ActiveVideoPlayer uri={uri} width={previewWidth} height={previewHeight} />
 })
 
-function ActiveVideoPlayer({ uri }: { uri: string }) {
+function ActiveVideoPlayer({ uri, width, height }: { uri: string; width: number; height: number }) {
   const player = useVideoPlayer(uri)
 
   const handleLayout = useCallback(() => {
@@ -195,7 +196,7 @@ function ActiveVideoPlayer({ uri }: { uri: string }) {
   }, [player])
 
   return (
-    <View className='h-62.5 w-62.5 overflow-hidden rounded-lg' onLayout={handleLayout}>
+    <View className='overflow-hidden rounded-lg' style={{ width, height }} onLayout={handleLayout}>
       <VideoView
         player={player}
         style={{ width: '100%', height: '100%' }}
