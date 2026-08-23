@@ -41,12 +41,18 @@ export const saveChatMetadata = (chat: SavedChat): void => {
 
 export const deleteSavedChat = (id: string): void => {
   const db = getArchiveDatabase()
-  db.runSync('DELETE FROM saved_chats WHERE id = ?', id)
+  db.withTransactionSync(() => {
+    db.runSync('DELETE FROM chat_positions WHERE chatId = ?', id)
+    db.runSync('DELETE FROM saved_chats WHERE id = ?', id)
+  })
 }
 
 export const deleteAllSavedChats = (): void => {
   const db = getArchiveDatabase()
-  db.runSync('DELETE FROM saved_chats')
+  db.withTransactionSync(() => {
+    db.runSync('DELETE FROM chat_positions')
+    db.runSync('DELETE FROM saved_chats')
+  })
 }
 
 export const getSavedChat = (id: string): SavedChat | null => {

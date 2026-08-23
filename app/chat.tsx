@@ -9,10 +9,12 @@ import { useMessagePages, type ListItem } from '@/hooks/use-message-pages'
 import { useTimelineBudget } from '@/hooks/use-timeline-budget'
 import { Pressable, Text, View } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
+import { saveChatPosition } from '@/store/message-database'
 import { formatDateLabel } from '@/utils/chat-timeline'
+import { createThrottledWriter } from '@/utils/throttled-writer'
 import { Ionicons } from '@expo/vector-icons'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   ImageBackground,
@@ -23,10 +25,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 const SCROLL_THRESHOLD = 300
-const MAINTAIN_SCROLL_POSITION = {
+const POSITION_WRITE_INTERVAL = 750
+const MAINTAIN_BOTTOM_POSITION = {
   startRenderingFromBottom: true,
   autoscrollToBottomThreshold: 0.1,
   animateAutoScrollToBottom: false
+} as const
+const MAINTAIN_RESTORED_POSITION = {
+  ...MAINTAIN_BOTTOM_POSITION,
+  startRenderingFromBottom: false
 } as const
 
 export default function ChatScreen() {
@@ -52,12 +59,35 @@ export default function ChatScreen() {
     hasNewer,
     isInitialLoading,
     isLoadingOlder,
-    isLoadingNewer
+    isLoadingNewer,
+    restoredSequence
   } = useMessagePages(chatData?.chatId ?? '', {
     pageSize: budget.pageSize,
     maxMessages: budget.maxMessages,
     onPageLoad
   })
+
+  const positionWriter = useMemo(
+    () =>
+      createThrottledWriter<number>(sequence => {
+        const chatId = chatData?.chatId
+        if (!chatId) return
+        void saveChatPosition(chatId, sequence).catch(error => {
+          console.error('Failed to save the chat position', error)
+        })
+      }, POSITION_WRITE_INTERVAL),
+    [chatData?.chatId]
+  )
+
+  useEffect(() => () => positionWriter.flush(), [positionWriter])
+
+  const initialScrollIndex = useMemo(() => {
+    if (restoredSequence === null) return undefined
+    const index = items.findIndex(
+      item => item.type === 'message' && item.sequence === restoredSequence
+    )
+    return index >= 0 ? index : undefined
+  }, [items, restoredSequence])
 
   useEffect(() => {
     if (!benchmarkEnabled || benchmarkStarted.current || items.length === 0) return
@@ -116,9 +146,10 @@ export default function ChatScreen() {
 
   const handleViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken<ListItem>[] }) => {
-      const firstVisible = viewableItems
+      const visibleItems = viewableItems
         .filter(token => token.isViewable && token.index !== null)
-        .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))[0]?.item
+        .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      const firstVisible = visibleItems[0]?.item
 
       if (!firstVisible) return
       const label =
@@ -126,8 +157,13 @@ export default function ChatScreen() {
           ? firstVisible.date
           : formatDateLabel(firstVisible.message.timestamp)
       setVisibleDate(previous => (previous === label ? previous : label))
+
+      const firstVisibleMessage = visibleItems.find(token => token.item.type === 'message')?.item
+      if (firstVisibleMessage?.type === 'message') {
+        positionWriter.schedule(firstVisibleMessage.sequence)
+      }
     },
-    []
+    [positionWriter]
   )
 
   const scrollToBottom = useCallback(() => {
@@ -157,40 +193,50 @@ export default function ChatScreen() {
           style={{ flex: 1 }}
           resizeMode='cover'
         >
-          <FlashList
-            ref={flashListRef}
-            data={items}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            getItemType={getItemType}
-            contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
-            maintainVisibleContentPosition={MAINTAIN_SCROLL_POSITION}
-            onScroll={handleScroll}
-            scrollEventThrottle={100}
-            onScrollBeginDrag={showVisibleDate}
-            onScrollEndDrag={hideVisibleDateSoon}
-            onMomentumScrollEnd={hideVisibleDateSoon}
-            onViewableItemsChanged={handleViewableItemsChanged}
-            onStartReached={handleStartReached}
-            onStartReachedThreshold={0.35}
-            onEndReached={handleEndReached}
-            onEndReachedThreshold={0.2}
-            onLoad={onLoad}
-            ListHeaderComponent={
-              isLoadingOlder ? (
-                <View className='items-center py-4'>
-                  <ActivityIndicator size='small' color='#00A884' />
-                </View>
-              ) : null
-            }
-            ListFooterComponent={
-              isLoadingNewer ? (
-                <View className='items-center py-4'>
-                  <ActivityIndicator size='small' color='#00A884' />
-                </View>
-              ) : null
-            }
-          />
+          {!isInitialLoading && (
+            <FlashList
+              ref={flashListRef}
+              data={items}
+              renderItem={renderItem}
+              keyExtractor={keyExtractor}
+              getItemType={getItemType}
+              initialScrollIndex={initialScrollIndex}
+              initialScrollIndexParams={
+                initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
+              }
+              contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
+              maintainVisibleContentPosition={
+                initialScrollIndex === undefined
+                  ? MAINTAIN_BOTTOM_POSITION
+                  : MAINTAIN_RESTORED_POSITION
+              }
+              onScroll={handleScroll}
+              scrollEventThrottle={100}
+              onScrollBeginDrag={showVisibleDate}
+              onScrollEndDrag={hideVisibleDateSoon}
+              onMomentumScrollEnd={hideVisibleDateSoon}
+              onViewableItemsChanged={handleViewableItemsChanged}
+              onStartReached={handleStartReached}
+              onStartReachedThreshold={0.35}
+              onEndReached={handleEndReached}
+              onEndReachedThreshold={0.2}
+              onLoad={onLoad}
+              ListHeaderComponent={
+                isLoadingOlder ? (
+                  <View className='items-center py-4'>
+                    <ActivityIndicator size='small' color='#00A884' />
+                  </View>
+                ) : null
+              }
+              ListFooterComponent={
+                isLoadingNewer ? (
+                  <View className='items-center py-4'>
+                    <ActivityIndicator size='small' color='#00A884' />
+                  </View>
+                ) : null
+              }
+            />
+          )}
 
           {isInitialLoading && (
             <View className='absolute inset-0 items-center justify-center'>

@@ -7,7 +7,13 @@ export interface TimelineRecord {
 
 export type TimelineItem =
   | { type: 'date'; id: string; date: string }
-  | { type: 'message'; id: string; message: Message; showSender: boolean }
+  | {
+      type: 'message'
+      id: string
+      sequence: number
+      message: Message
+      showSender: boolean
+    }
 
 export type LoadDirection = 'older' | 'newer'
 
@@ -45,7 +51,7 @@ export function buildTimelineItems(records: TimelineRecord[], now = new Date()):
   let previousMessage: Message | null = null
   let previousDay: string | null = null
 
-  for (const { message } of records) {
+  for (const { sequence, message } of records) {
     const day = localDayKey(message.timestamp)
     const startsDay = day !== previousDay
 
@@ -60,6 +66,7 @@ export function buildTimelineItems(records: TimelineRecord[], now = new Date()):
     items.push({
       type: 'message',
       id: message.id,
+      sequence,
       message,
       showSender:
         !message.isSystem &&
