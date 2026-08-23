@@ -8,6 +8,7 @@ import { ActivityIndicator, Linking, ScrollView } from 'react-native'
 import { useAttachmentPages } from '@/hooks/use-attachment-pages'
 import { Pressable, Text, View } from '@/src/tw'
 import type { AttachmentFilter, AttachmentRecord } from '@/utils/media-library'
+import { MediaViewer } from './media-viewer'
 
 const FILTERS: { id: AttachmentFilter; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'image', label: 'Photos', icon: 'image-outline' },
@@ -33,6 +34,7 @@ interface MediaLibraryProps {
 
 export function MediaLibrary({ chatId, onClose, onJump }: MediaLibraryProps) {
   const [filter, setFilter] = useState<AttachmentFilter>('image')
+  const [viewerSequence, setViewerSequence] = useState<number | null>(null)
   const {
     records,
     hasOlder,
@@ -47,7 +49,11 @@ export function MediaLibrary({ chatId, onClose, onJump }: MediaLibraryProps) {
 
   const renderItem = useCallback(
     ({ item }: { item: AttachmentRecord }) => (
-      <AttachmentTile record={item} grid={isGrid} onJump={() => onJump(item)} />
+      <AttachmentTile
+        record={item}
+        grid={isGrid}
+        onOpen={() => (isGrid ? setViewerSequence(item.sequence) : onJump(item))}
+      />
     ),
     [isGrid, onJump]
   )
@@ -145,6 +151,21 @@ export function MediaLibrary({ chatId, onClose, onJump }: MediaLibraryProps) {
           }
         />
       )}
+      {viewerSequence !== null && (
+        <MediaViewer
+          records={records}
+          initialSequence={viewerSequence}
+          hasOlder={hasOlder}
+          hasNewer={hasNewer}
+          loadOlder={loadOlder}
+          loadNewer={loadNewer}
+          onClose={() => setViewerSequence(null)}
+          onJump={record => {
+            setViewerSequence(null)
+            onJump(record)
+          }}
+        />
+      )}
     </View>
   )
 }
@@ -152,11 +173,11 @@ export function MediaLibrary({ chatId, onClose, onJump }: MediaLibraryProps) {
 const AttachmentTile = memo(function AttachmentTile({
   record,
   grid,
-  onJump
+  onOpen
 }: {
   record: AttachmentRecord
   grid: boolean
-  onJump(): void
+  onOpen(): void
 }) {
   const available = useMemo(() => {
     if (record.type === 'link') return record.url !== null
@@ -180,7 +201,7 @@ const AttachmentTile = memo(function AttachmentTile({
     return (
       <Pressable
         className='m-px aspect-square flex-1 overflow-hidden bg-[#202C33]'
-        onPress={onJump}
+        onPress={onOpen}
       >
         {previewAvailable ? (
           <Image
@@ -230,7 +251,7 @@ const AttachmentTile = memo(function AttachmentTile({
   return (
     <Pressable
       className='mb-2 flex-row items-center rounded-xl bg-[#202C33] px-3 py-3 active:bg-[#2A3942]'
-      onPress={onJump}
+      onPress={onOpen}
     >
       <View className='size-11 items-center justify-center rounded-full bg-[#00A884]/15'>
         <Ionicons

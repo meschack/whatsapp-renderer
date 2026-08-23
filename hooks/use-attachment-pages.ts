@@ -137,6 +137,7 @@ export function useAttachmentPages(
       replaceRecords(merged.records)
       replaceHasOlder(page.hasMore)
       if (merged.trimmedNewer) replaceHasNewer(true)
+      return merged.records
     } catch (error) {
       console.error('Failed to load older attachments', error)
     } finally {
@@ -171,6 +172,7 @@ export function useAttachmentPages(
       replaceRecords(merged.records)
       replaceHasNewer(page.hasMore)
       if (merged.trimmedOlder) replaceHasOlder(true)
+      return merged.records
     } catch (error) {
       console.error('Failed to load newer attachments', error)
     } finally {

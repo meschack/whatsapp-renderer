@@ -7,7 +7,10 @@
     "icon": "./assets/images/icon.png",
     "scheme": "whatsapprenderer",
     "userInterfaceStyle": "automatic",
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.godwingbewezoun.whatsapprenderer" },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.godwingbewezoun.whatsapprenderer"
+    },
     "android": {
       "versionCode": 3,
       "predictiveBackGestureEnabled": false,
@@ -22,13 +25,24 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
-          "dark": { "backgroundColor": "#000000" }
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ],
       "expo-image",
-      "expo-asset"
+      "expo-asset",
+      "expo-sharing"
     ],
-    "experiments": { "typedRoutes": true, "reactCompiler": true },
-    "extra": { "router": {}, "eas": { "projectId": "f562e070-1f99-4012-9c60-389b1e0c68fb" } }
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f562e070-1f99-4012-9c60-389b1e0c68fb"
+      }
+    }
   }
 }
