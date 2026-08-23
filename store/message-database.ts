@@ -1,59 +1,6 @@
-import { openDatabaseSync } from 'expo-sqlite'
 import type { Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
-import { stripEditedMarker } from '@/utils/message-text'
-
-const db = openDatabaseSync('whatsapp-renderer.db')
-
-db.execSync(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chatId TEXT NOT NULL,
-    sender TEXT,
-    text TEXT,
-    mediaType TEXT,
-    mediaUri TEXT,
-    timestamp INTEGER NOT NULL,
-    isEdited INTEGER NOT NULL DEFAULT 0,
-    isMine INTEGER NOT NULL DEFAULT 0,
-    isSystem INTEGER NOT NULL DEFAULT 0
-  );
-  CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chatId, id);
-`)
-
-// Legacy cleanup: remove placeholder rows for missing images that should not render as messages.
-db.runSync(
-  `DELETE FROM messages
-   WHERE mediaType = 'image'
-     AND mediaUri IS NULL
-     AND text IS NULL`
-)
-
-const messageColumns = db.getAllSync<{ name: string }>('PRAGMA table_info(messages)')
-
-if (!messageColumns.some(column => column.name === 'isEdited')) {
-  db.runSync('ALTER TABLE messages ADD COLUMN isEdited INTEGER NOT NULL DEFAULT 0')
-
-  const legacyEditedRows = db.getAllSync<{ id: number; text: string | null }>(
-    'SELECT id, text FROM messages WHERE text LIKE ?',
-    '%<This message was edited>%'
-  )
-
-  if (legacyEditedRows.length > 0) {
-    db.withTransactionSync(() => {
-      const stmt = db.prepareSync('UPDATE messages SET text = ?, isEdited = 1 WHERE id = ?')
-
-      try {
-        for (const row of legacyEditedRows) {
-          const { cleanText } = stripEditedMarker(row.text ?? '')
-          stmt.executeSync(cleanText, row.id)
-        }
-      } finally {
-        stmt.finalizeSync()
-      }
-    })
-  }
-}
+import { getArchiveDatabase } from './archive-database'
 
 /**
  * Batch insert messages into SQLite within a transaction.
@@ -61,6 +8,7 @@ if (!messageColumns.some(column => column.name === 'isEdited')) {
  * so autoincrement id preserves message ordering.
  */
 export function insertMessageBatch(chatId: string, messages: Message[]): void {
+  const db = getArchiveDatabase()
   db.withTransactionSync(() => {
     const stmt = db.prepareSync(
       `INSERT INTO messages (chatId, sender, text, mediaType, mediaUri, timestamp, isEdited, isMine, isSystem)
@@ -133,6 +81,7 @@ function rowsToPage(rows: MessageRow[], limit: number, newestFirst: boolean): Me
 
 /** Load the newest messages without blocking the JavaScript thread. */
 export async function getLatestMessagePage(chatId: string, limit: number): Promise<MessagePage> {
+  const db = getArchiveDatabase()
   const rows = await db.getAllAsync<MessageRow>(
     `SELECT ${MESSAGE_PAGE_COLUMNS}
      FROM messages
@@ -152,6 +101,7 @@ export async function getOlderMessagePage(
   beforeSequence: number,
   limit: number
 ): Promise<MessagePage> {
+  const db = getArchiveDatabase()
   const rows = await db.getAllAsync<MessageRow>(
     `SELECT ${MESSAGE_PAGE_COLUMNS}
      FROM messages
@@ -172,6 +122,7 @@ export async function getNewerMessagePage(
   afterSequence: number,
   limit: number
 ): Promise<MessagePage> {
+  const db = getArchiveDatabase()
   const rows = await db.getAllAsync<MessageRow>(
     `SELECT ${MESSAGE_PAGE_COLUMNS}
      FROM messages
@@ -190,6 +141,7 @@ export async function getNewerMessagePage(
  * Get total message count for a chat.
  */
 export function getMessageCount(chatId: string): number {
+  const db = getArchiveDatabase()
   const row = db.getFirstSync<{ count: number }>(
     'SELECT COUNT(*) as count FROM messages WHERE chatId = ?',
     chatId
@@ -201,6 +153,7 @@ export function getMessageCount(chatId: string): number {
  * Check if messages exist for a chat (for legacy migration detection).
  */
 export function hasMessages(chatId: string): boolean {
+  const db = getArchiveDatabase()
   const row = db.getFirstSync<{ id: number }>(
     'SELECT id FROM messages WHERE chatId = ? LIMIT 1',
     chatId
@@ -213,13 +166,10 @@ export function hasMessages(chatId: string): boolean {
  * Resets all messages to isMine=0 first, then sets isMine=1 for the sender.
  */
 export function updateIsMine(chatId: string, senderName: string): void {
+  const db = getArchiveDatabase()
   db.withTransactionSync(() => {
     db.runSync('UPDATE messages SET isMine = 0 WHERE chatId = ?', chatId)
-    db.runSync(
-      'UPDATE messages SET isMine = 1 WHERE chatId = ? AND sender = ?',
-      chatId,
-      senderName
-    )
+    db.runSync('UPDATE messages SET isMine = 1 WHERE chatId = ? AND sender = ?', chatId, senderName)
   })
 }
 
@@ -227,6 +177,7 @@ export function updateIsMine(chatId: string, senderName: string): void {
  * Delete all messages for a chat.
  */
 export function deleteMessages(chatId: string): void {
+  const db = getArchiveDatabase()
   db.runSync('DELETE FROM messages WHERE chatId = ?', chatId)
 }
 
@@ -234,6 +185,7 @@ export function deleteMessages(chatId: string): void {
  * Get distinct participants for a chat.
  */
 export function getParticipants(chatId: string): string[] {
+  const db = getArchiveDatabase()
   const rows = db.getAllSync<{ sender: string }>(
     'SELECT DISTINCT sender FROM messages WHERE chatId = ? AND sender IS NOT NULL',
     chatId
@@ -245,6 +197,7 @@ export function getParticipants(chatId: string): string[] {
  * Get the last message text and timestamp for a chat.
  */
 export function getLastMessage(chatId: string): { text: string | null; timestamp: number } | null {
+  const db = getArchiveDatabase()
   const row = db.getFirstSync<{ text: string | null; timestamp: number }>(
     'SELECT text, timestamp FROM messages WHERE chatId = ? AND isSystem = 0 ORDER BY id DESC LIMIT 1',
     chatId

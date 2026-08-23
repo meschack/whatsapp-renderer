@@ -1,23 +1,8 @@
-import { openDatabaseSync } from 'expo-sqlite'
 import type { SavedChat } from '@/models/types'
-
-const db = openDatabaseSync('whatsapp-renderer.db')
-
-db.runSync(`
-  CREATE TABLE IF NOT EXISTS saved_chats (
-    id TEXT PRIMARY KEY,
-    chatName TEXT NOT NULL,
-    myName TEXT NOT NULL,
-    participants TEXT NOT NULL,
-    extractDirUri TEXT NOT NULL,
-    messageCount INTEGER NOT NULL,
-    lastMessageText TEXT,
-    lastMessageTime TEXT NOT NULL,
-    importedAt TEXT NOT NULL
-  )
-`)
+import { getArchiveDatabase } from './archive-database'
 
 export const getAllSavedChats = (): SavedChat[] => {
+  const db = getArchiveDatabase()
   const rows = db.getAllSync<{
     id: string
     chatName: string
@@ -37,6 +22,7 @@ export const getAllSavedChats = (): SavedChat[] => {
 }
 
 export const saveChatMetadata = (chat: SavedChat): void => {
+  const db = getArchiveDatabase()
   db.runSync(
     `INSERT OR REPLACE INTO saved_chats
       (id, chatName, myName, participants, extractDirUri, messageCount, lastMessageText, lastMessageTime, importedAt)
@@ -54,14 +40,17 @@ export const saveChatMetadata = (chat: SavedChat): void => {
 }
 
 export const deleteSavedChat = (id: string): void => {
+  const db = getArchiveDatabase()
   db.runSync('DELETE FROM saved_chats WHERE id = ?', id)
 }
 
 export const deleteAllSavedChats = (): void => {
+  const db = getArchiveDatabase()
   db.runSync('DELETE FROM saved_chats')
 }
 
 export const getSavedChat = (id: string): SavedChat | null => {
+  const db = getArchiveDatabase()
   const row = db.getFirstSync<{
     id: string
     chatName: string
