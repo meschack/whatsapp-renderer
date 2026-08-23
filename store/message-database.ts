@@ -389,6 +389,35 @@ export async function saveChatPosition(chatId: string, messageSequence: number):
   )
 }
 
+export async function isMessageBookmarked(messageSequence: number): Promise<boolean> {
+  const db = getArchiveDatabase()
+  const row = await db.getFirstAsync<{ messageId: number }>(
+    'SELECT messageId FROM message_bookmarks WHERE messageId = ?',
+    messageSequence
+  )
+  return row !== null
+}
+
+export async function setMessageBookmarked(
+  chatId: string,
+  messageSequence: number,
+  bookmarked: boolean
+): Promise<void> {
+  const db = getArchiveDatabase()
+  if (!bookmarked) {
+    await db.runAsync('DELETE FROM message_bookmarks WHERE messageId = ?', messageSequence)
+    return
+  }
+
+  await db.runAsync(
+    `INSERT OR IGNORE INTO message_bookmarks (messageId, chatId, createdAt)
+     SELECT id, chatId, ? FROM messages WHERE id = ? AND chatId = ?`,
+    Date.now(),
+    messageSequence,
+    chatId
+  )
+}
+
 /** Load history using a stable keyset cursor instead of an increasingly expensive OFFSET. */
 export async function getOlderMessagePage(
   chatId: string,
@@ -473,6 +502,7 @@ export function updateIsMine(chatId: string, senderName: string): void {
 export function deleteMessages(chatId: string): void {
   const db = getArchiveDatabase()
   db.withTransactionSync(() => {
+    db.runSync('DELETE FROM message_bookmarks WHERE chatId = ?', chatId)
     db.runSync('DELETE FROM messages WHERE chatId = ?', chatId)
     db.runSync('DELETE FROM chat_positions WHERE chatId = ?', chatId)
   })

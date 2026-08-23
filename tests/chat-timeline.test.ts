@@ -6,6 +6,7 @@ import {
   type TimelineRecord
 } from '../utils/chat-timeline'
 import { describe, expect, it } from 'vitest'
+import { buildMessageInfoRows, getMessageActionAvailability } from '../utils/message-actions'
 
 function record(sequence: number, timestamp: string, sender = 'Alice'): TimelineRecord {
   const message: Message = {
@@ -103,5 +104,52 @@ describe('mergeTimelineWindow', () => {
     expect(result.records.map(item => item.sequence)).toEqual([4, 5, 6, 7, 8, 9, 10, 11])
     expect(result.trimmedOlder).toBe(true)
     expect(result.trimmedNewer).toBe(false)
+  })
+})
+
+describe('message actions', () => {
+  it('only exposes text and bookmark actions when the message supports them', () => {
+    const textMessage = record(1, '2026-08-22T08:00:00').message
+    const systemMessage = {
+      ...record(2, '2026-08-22T08:01:00').message,
+      text: null,
+      isSystem: true
+    }
+
+    expect(getMessageActionAvailability(textMessage)).toEqual({
+      copy: true,
+      share: true,
+      bookmark: true,
+      information: true
+    })
+    expect(getMessageActionAvailability(systemMessage)).toEqual({
+      copy: false,
+      share: false,
+      bookmark: false,
+      information: true
+    })
+  })
+
+  it('formats available file metadata for the information view', () => {
+    const message = {
+      ...record(3, '2026-08-22T08:02:00').message,
+      mediaType: 'audio' as const,
+      mediaUri: 'file:///voice.opus',
+      mediaFilename: 'voice.opus',
+      mediaSize: 2_048,
+      mediaDuration: 61.8,
+      isEdited: true
+    }
+
+    expect(buildMessageInfoRows(message, () => '22 Aug 2026, 08:02')).toEqual(
+      expect.arrayContaining([
+        { label: 'Timestamp', value: '22 Aug 2026, 08:02' },
+        { label: 'Edited', value: 'Yes' },
+        { label: 'Filename', value: 'voice.opus' },
+        { label: 'Size', value: '2.0 KB' },
+        { label: 'Duration', value: '1:01' },
+        { label: 'File', value: 'Available' }
+      ])
+    )
   })
 })
