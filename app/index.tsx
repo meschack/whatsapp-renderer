@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Alert, FlatList } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -22,13 +22,18 @@ import { parseChat } from '@/utils/parser'
 import { indexMedia } from '@/utils/media-index'
 import { openFileTranscript } from '@/utils/transcript-stream'
 import { importChat } from '@/utils/chat-import'
-import type { ChatImportPhase } from '@/utils/chat-import-workflow'
+import {
+  ImportCancelledError,
+  type ChatImportPhase,
+  type DuplicateImportChoice
+} from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
 import type { MediaMap, SavedChat } from '@/models/types'
 
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
   discovering: 'Finding messages and media',
+  'checking-duplicate': 'Checking for duplicates',
   'indexing-media': 'Preparing media previews',
   reading: 'Reading transcript',
   parsing: 'Importing messages',
@@ -40,16 +45,28 @@ const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
 export default function HomeScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const {
-    setChatData,
-    isLoading,
-    setIsLoading,
-    error,
-    setError,
-    savedChats,
-    refreshSavedChats
-  } = useChatStore()
+  const { setChatData, isLoading, setIsLoading, error, setError, savedChats, refreshSavedChats } =
+    useChatStore()
   const [statusText, setStatusText] = useState('')
+  const [isImporting, setIsImporting] = useState(false)
+  const importControllerRef = useRef<AbortController | null>(null)
+
+  const chooseDuplicate = useCallback(
+    (chat: SavedChat) =>
+      new Promise<DuplicateImportChoice>(resolve => {
+        Alert.alert(
+          'Chat already imported',
+          `“${chat.chatName}” has the same chat content. What should happen?`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+            { text: 'Replace', style: 'destructive', onPress: () => resolve('replace') },
+            { text: 'Open existing', onPress: () => resolve('open') }
+          ],
+          { cancelable: true, onDismiss: () => resolve('cancel') }
+        )
+      }),
+    []
+  )
 
   const handleImport = useCallback(async () => {
     try {
@@ -75,9 +92,15 @@ export default function HomeScreen() {
         return
       }
 
-      const { chat } = await importChat({
+      const controller = new AbortController()
+      importControllerRef.current = controller
+      setIsImporting(true)
+
+      const { chat, outcome } = await importChat({
         temporaryArchiveUri: pickedFile.uri,
         archiveName: pickedFile.name ?? 'Chat.zip',
+        signal: controller.signal,
+        onDuplicate: chooseDuplicate,
         onProgress: ({ phase, completed, total, phaseCompleted, phaseTotal }) => {
           const percentage = Math.round((completed / total) * 100)
           const itemProgress =
@@ -101,15 +124,21 @@ export default function HomeScreen() {
 
       setStatusText('')
       setIsLoading(false)
-      router.push('/select-sender')
+      setIsImporting(false)
+      importControllerRef.current = null
+      router.push(outcome === 'opened-existing' ? '/chat' : '/select-sender')
     } catch (err: unknown) {
+      const wasCancelled =
+        err instanceof ImportCancelledError || (err instanceof Error && err.name === 'AbortError')
       const message = err instanceof Error ? err.message : 'An unknown error occurred'
-      setError(message)
+      setError(wasCancelled ? null : message)
       setIsLoading(false)
+      setIsImporting(false)
+      importControllerRef.current = null
       setStatusText('')
-      Alert.alert('Import Error', message)
+      if (!wasCancelled) Alert.alert('Import Error', message)
     }
-  }, [refreshSavedChats, router, setChatData, setIsLoading, setError])
+  }, [chooseDuplicate, refreshSavedChats, router, setChatData, setIsLoading, setError])
 
   const handleOpenChat = useCallback(
     async (chat: SavedChat) => {
@@ -249,10 +278,27 @@ export default function HomeScreen() {
     return (
       <SafeAreaView
         edges={['bottom']}
-        style={{ flex: 1, backgroundColor: '#0B141A', justifyContent: 'center', alignItems: 'center', gap: 12 }}
+        style={{
+          flex: 1,
+          backgroundColor: '#0B141A',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 12
+        }}
       >
         <ActivityIndicator size='large' color='#00A884' />
-        <Text className='text-sm text-wa-text-secondary'>{statusText}</Text>
+        <Text className='text-wa-text-secondary text-sm'>{statusText}</Text>
+        {isImporting && (
+          <Pressable
+            className='mt-2 rounded-full border border-[#FF6B6B]/60 px-5 py-2 active:bg-[#FF6B6B]/10'
+            onPress={() => {
+              setStatusText('Cancelling import…')
+              importControllerRef.current?.abort()
+            }}
+          >
+            <Text className='text-sm font-medium text-[#FF6B6B]'>Cancel import</Text>
+          </Pressable>
+        )}
       </SafeAreaView>
     )
   }
@@ -261,37 +307,38 @@ export default function HomeScreen() {
   if (savedChats.length === 0) {
     return (
       <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
-        <View className='flex-1 justify-center items-center px-6'>
-          <View className='mb-6 w-36 h-36 rounded-full bg-wa-header justify-center items-center'>
+        <View className='flex-1 items-center justify-center px-6'>
+          <View className='bg-wa-header mb-6 h-36 w-36 items-center justify-center rounded-full'>
             <Ionicons name='chatbubbles' size={80} color='#00A884' />
           </View>
 
-          <Text className='text-[22px] font-bold text-wa-text-primary mb-2 text-center'>
+          <Text className='text-wa-text-primary mb-2 text-center text-[22px] font-bold'>
             WhatsApp Chat Renderer
           </Text>
-          <Text className='text-sm text-wa-text-secondary text-center leading-6 mb-6'>
-            Import a WhatsApp chat export (.zip) to view your conversations in a beautiful interface.
+          <Text className='text-wa-text-secondary mb-6 text-center text-sm leading-6'>
+            Import a WhatsApp chat export (.zip) to view your conversations in a beautiful
+            interface.
           </Text>
 
-          <View className='self-stretch mb-8 gap-3'>
+          <View className='mb-8 gap-3 self-stretch'>
             <StepItem number='1' text='Export a chat from WhatsApp' />
             <StepItem number='2' text='Choose the .zip file below' />
             <StepItem number='3' text='View your conversation' />
           </View>
 
           <TouchableOpacity
-            className='flex-row items-center justify-center bg-wa-accent py-4 px-6 rounded-xl self-stretch'
+            className='bg-wa-accent flex-row items-center justify-center self-stretch rounded-xl px-6 py-4'
             onPress={handleImport}
             activeOpacity={0.7}
           >
             <Ionicons name='document-attach' size={24} color='#FFFFFF' style={{ marginRight: 8 }} />
-            <Text className='text-white text-base font-semibold'>Import .zip File</Text>
+            <Text className='text-base font-semibold text-white'>Import .zip File</Text>
           </TouchableOpacity>
 
           {error && (
-            <View className='flex-row items-center gap-2 mt-4 p-3 bg-wa-error/10 rounded-lg'>
+            <View className='bg-wa-error/10 mt-4 flex-row items-center gap-2 rounded-lg p-3'>
               <Ionicons name='warning' size={20} color='#FF6B6B' />
-              <Text className='text-wa-error text-xs flex-1'>{error}</Text>
+              <Text className='text-wa-error flex-1 text-xs'>{error}</Text>
             </View>
           )}
         </View>
@@ -310,7 +357,7 @@ export default function HomeScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 88 }}
         ListFooterComponent={
           <Pressable
-            className='flex-row items-center justify-center gap-2 py-4 mt-2'
+            className='mt-2 flex-row items-center justify-center gap-2 py-4'
             onPress={handleResetAll}
           >
             <Ionicons name='trash-outline' size={16} color='#FF6B6B' />
@@ -321,7 +368,7 @@ export default function HomeScreen() {
 
       {/* FAB */}
       <Pressable
-        className='absolute right-5 w-14 h-14 rounded-full bg-wa-accent justify-center items-center'
+        className='bg-wa-accent absolute right-5 h-14 w-14 items-center justify-center rounded-full'
         style={{
           bottom: insets.bottom + 16,
           elevation: 6,
@@ -338,15 +385,15 @@ export default function HomeScreen() {
   )
 }
 
-const ListSeparator = () => <View className='h-px bg-wa-divider ml-[72px]' />
+const ListSeparator = () => <View className='bg-wa-divider ml-[72px] h-px' />
 
 const StepItem = ({ number, text }: { number: string; text: string }) => {
   return (
     <View className='flex-row items-center gap-3'>
-      <View className='w-8 h-8 rounded-full bg-wa-accent justify-center items-center'>
-        <Text className='text-white font-bold text-sm'>{number}</Text>
+      <View className='bg-wa-accent h-8 w-8 items-center justify-center rounded-full'>
+        <Text className='text-sm font-bold text-white'>{number}</Text>
       </View>
-      <Text className='text-wa-text-primary text-base flex-1'>{text}</Text>
+      <Text className='text-wa-text-primary flex-1 text-base'>{text}</Text>
     </View>
   )
 }
