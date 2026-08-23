@@ -9,6 +9,8 @@ vi.mock('../store/archive-database', () => ({
 
 import {
   getInitialMessagePage,
+  findFirstMessageOnLocalDay,
+  getChatDays,
   getBookmarkPage,
   getNewerAttachmentPage,
   getOlderAttachmentPage,
@@ -152,6 +154,29 @@ describe('chat position restoration', () => {
 
     expect(page.records.map(record => record.sequence)).toEqual([2, 3, 4, 5, 6])
     expect(page.restoredSequence).toBe(4)
+  })
+
+  it('indexes local conversation days and resolves the first message on a selected day', async () => {
+    sqlite.exec('DELETE FROM messages')
+    const insert = sqlite.prepare(
+      `INSERT INTO messages (id, chatId, sender, text, timestamp)
+       VALUES (?, 'chat-1', 'Alice', ?, ?)`
+    )
+    insert.run(101, 'late first day', new Date(2026, 2, 7, 23, 50).getTime())
+    insert.run(102, 'first second day', new Date(2026, 2, 8, 0, 10).getTime())
+    insert.run(103, 'later second day', new Date(2026, 2, 8, 23, 40).getTime())
+
+    expect(await getChatDays('chat-1')).toEqual([
+      { dayKey: '2026-03-07', messageCount: 1 },
+      { dayKey: '2026-03-08', messageCount: 2 }
+    ])
+    expect(await findFirstMessageOnLocalDay('chat-1', '2026-03-08')).toEqual({
+      dayKey: '2026-03-08',
+      sequence: 102,
+      messageId: 'msg-102'
+    })
+    expect(await findFirstMessageOnLocalDay('chat-1', '2026-03-09')).toBeNull()
+    expect(await findFirstMessageOnLocalDay('chat-1', 'not-a-date')).toBeNull()
   })
 
   it('adds and removes bookmarks only for messages in the requested chat', async () => {
