@@ -8,6 +8,8 @@ interface ChatToolsMenuProps {
   onMedia(): void
   onBookmarks(): void
   onInsights(): void
+  hapticsEnabled: boolean
+  onToggleHaptics(): void
   onDiagnostics?(): void
 }
 
@@ -18,17 +20,26 @@ export function ChatToolsMenu({
   onMedia,
   onBookmarks,
   onInsights,
+  hapticsEnabled,
+  onToggleHaptics,
   onDiagnostics
 }: ChatToolsMenuProps) {
   const actions: {
     label: string
     icon: keyof typeof Ionicons.glyphMap
     onPress(): void
+    checked?: boolean
   }[] = [
     { label: 'Jump to date', icon: 'calendar-outline', onPress: onCalendar },
     { label: 'Chat media', icon: 'images-outline', onPress: onMedia },
     { label: 'Bookmarks', icon: 'bookmark-outline', onPress: onBookmarks },
-    { label: 'Chat insights', icon: 'stats-chart-outline', onPress: onInsights }
+    { label: 'Chat insights', icon: 'stats-chart-outline', onPress: onInsights },
+    {
+      label: `Haptic feedback ${hapticsEnabled ? 'on' : 'off'}`,
+      icon: hapticsEnabled ? 'phone-portrait' : 'phone-portrait-outline',
+      onPress: onToggleHaptics,
+      checked: hapticsEnabled
+    }
   ]
 
   if (onDiagnostics && diagnosticsCount > 0) {
@@ -51,6 +62,9 @@ export function ChatToolsMenu({
           <Pressable
             key={action.label}
             accessibilityRole='button'
+            accessibilityState={
+              action.checked === undefined ? undefined : { checked: action.checked }
+            }
             className='min-h-12 flex-row items-center px-4 active:bg-white/10'
             onPress={() => {
               onClose()
@@ -63,6 +77,13 @@ export function ChatToolsMenu({
               color={action.icon === 'warning-outline' ? '#F7C948' : '#AEBAC1'}
             />
             <Text className='ml-3 text-[14px] text-[#E9EDEF]'>{action.label}</Text>
+            {action.checked !== undefined ? (
+              <Ionicons
+                name={action.checked ? 'checkbox' : 'square-outline'}
+                size={19}
+                color={action.checked ? '#00A884' : '#8696A0'}
+              />
+            ) : null}
           </Pressable>
         ))}
       </View>

@@ -22,6 +22,8 @@ import { useChatStore } from '@/store/chat-store'
 import { saveChatPosition, type MessageSearchResult } from '@/store/message-database'
 import { formatDateLabel } from '@/utils/chat-timeline'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
+import { isHapticFeedbackEnabled, setHapticFeedbackEnabled } from '@/store/preference-database'
+import { performHapticFeedback } from '@/utils/haptic-feedback'
 import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
@@ -65,6 +67,7 @@ export default function ChatScreen() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [isInsightsOpen, setIsInsightsOpen] = useState(false)
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
+  const [hapticsEnabled, setHapticsEnabled] = useState(isHapticFeedbackEnabled)
   const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [actionSelection, setActionSelection] = useState<MessageActionSelection | null>(null)
@@ -160,9 +163,13 @@ export default function ChatScreen() {
         return (
           <Pressable
             delayLongPress={500}
-            onLongPress={() =>
+            accessibilityLabel={item.message.text ?? 'System message'}
+            accessibilityHint='Long press for message actions'
+            accessibilityRole='button'
+            onLongPress={() => {
+              performHapticFeedback('action')
               setActionSelection({ message: item.message, sequence: item.sequence })
-            }
+            }}
             style={
               item.id === highlightedMessageId
                 ? { backgroundColor: 'rgba(0, 168, 132, 0.22)' }
@@ -387,7 +394,9 @@ export default function ChatScreen() {
 
             {showScrollButton && (
               <Pressable
-                className='bg-wa-header absolute right-3.5 flex size-10 items-center justify-center rounded-full'
+                accessibilityLabel='Scroll to newest message'
+                accessibilityRole='button'
+                className='bg-wa-header absolute right-3.5 flex size-11 items-center justify-center rounded-full'
                 style={{
                   bottom: 12,
                   elevation: 4,
@@ -454,6 +463,13 @@ export default function ChatScreen() {
           {isToolsMenuOpen && (
             <ChatToolsMenu
               diagnosticsCount={diagnosticsCount}
+              hapticsEnabled={hapticsEnabled}
+              onToggleHaptics={() => {
+                const next = !hapticsEnabled
+                setHapticFeedbackEnabled(next)
+                setHapticsEnabled(next)
+                if (next) performHapticFeedback('selection')
+              }}
               onClose={() => setIsToolsMenuOpen(false)}
               onCalendar={() => {
                 setIsSearchOpen(false)

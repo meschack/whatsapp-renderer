@@ -5,7 +5,11 @@ import { memo } from 'react'
 /** Read-only composer chrome: this app renders exports, it does not send messages. */
 export const ChatComposer = memo(function ChatComposer() {
   return (
-    <View className='bg-wa-header h-14 flex-row items-center gap-2 px-2.5'>
+    <View
+      accessible
+      accessibilityLabel='Read-only chat export. Sending messages is unavailable.'
+      className='bg-wa-header min-h-14 flex-row items-center gap-2 px-2.5 py-2'
+    >
       <View className='size-9 items-center justify-center'>
         <Ionicons name='add' size={29} color='#E9EDEF' />
       </View>

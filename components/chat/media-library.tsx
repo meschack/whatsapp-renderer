@@ -200,6 +200,8 @@ const AttachmentTile = memo(function AttachmentTile({
   if (grid) {
     return (
       <Pressable
+        accessibilityLabel={`Open ${record.type} ${record.filename ?? ''}`.trim()}
+        accessibilityRole='button'
         className='m-px aspect-square flex-1 overflow-hidden bg-[#202C33]'
         onPress={onOpen}
       >
@@ -250,6 +252,9 @@ const AttachmentTile = memo(function AttachmentTile({
 
   return (
     <Pressable
+      accessibilityLabel={`${title}, ${formatAttachmentDetails(record)}`}
+      accessibilityHint='Jump to source message'
+      accessibilityRole='button'
       className='mb-2 flex-row items-center rounded-xl bg-[#202C33] px-3 py-3 active:bg-[#2A3942]'
       onPress={onOpen}
     >
@@ -271,7 +276,8 @@ const AttachmentTile = memo(function AttachmentTile({
       {record.type === 'link' && available && (
         <Pressable
           accessibilityLabel='Open link'
-          className='ml-2 size-9 items-center justify-center rounded-full bg-white/5'
+          accessibilityRole='link'
+          className='ml-2 size-11 items-center justify-center rounded-full bg-white/5'
           onPress={event => {
             event.stopPropagation()
             void Linking.openURL(record.url!).catch(() => undefined)

@@ -7,6 +7,8 @@ import { InlineMessageMeta, MessageMeta } from './message-meta'
 import { MediaMessage } from './media-message'
 import { RichText, extractFirstUrl } from './rich-text'
 import { useRecyclingState } from '@shopify/flash-list'
+import { getMessageAccessibilityLabel } from '@/utils/accessibility'
+import { performHapticFeedback } from '@/utils/haptic-feedback'
 
 const MAX_CHARS = 500
 
@@ -53,10 +55,16 @@ export const ChatBubble = memo(function ChatBubble({
 
   return (
     <Pressable
+      accessibilityLabel={getMessageAccessibilityLabel(message)}
+      accessibilityHint='Long press for message actions'
+      accessibilityRole='button'
       className={`px-2 ${isMine ? 'items-end' : 'items-start'}`}
       style={{ marginTop: showSender ? 6 : 1 }}
       delayLongPress={500}
-      onLongPress={onLongPress}
+      onLongPress={() => {
+        performHapticFeedback('action')
+        onLongPress?.()
+      }}
     >
       <View
         className={cn(

@@ -24,8 +24,13 @@ export function ChatHeader({
 
   return (
     <View className='bg-wa-header' style={{ paddingTop: insets.top }}>
-      <View className='h-15 flex-row items-center gap-1.5 px-2'>
-        <Pressable className='size-10 items-center justify-center' onPress={() => router.back()}>
+      <View className='min-h-15 flex-row items-center gap-1.5 px-2 py-1'>
+        <Pressable
+          accessibilityLabel='Back to chats'
+          accessibilityRole='button'
+          className='size-11 items-center justify-center'
+          onPress={() => router.back()}
+        >
           <Ionicons name='chevron-back' size={29} color='#E9EDEF' />
         </Pressable>
 
@@ -46,7 +51,8 @@ export function ChatHeader({
           {onSearchPress && (
             <Pressable
               accessibilityLabel='Search messages'
-              className='size-9 items-center justify-center'
+              accessibilityRole='button'
+              className='size-11 items-center justify-center'
               onPress={onSearchPress}
             >
               <Ionicons name='search-outline' size={22} color='#E9EDEF' />
@@ -55,7 +61,8 @@ export function ChatHeader({
           {onMorePress && (
             <Pressable
               accessibilityLabel='Open chat tools'
-              className='size-9 items-center justify-center'
+              accessibilityRole='button'
+              className='size-11 items-center justify-center'
               onPress={onMorePress}
             >
               <Ionicons name='ellipsis-vertical' size={21} color='#E9EDEF' />
