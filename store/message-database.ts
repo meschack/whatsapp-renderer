@@ -1,6 +1,8 @@
 import type { MediaMap, Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
 import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/message-search'
+import { extractFirstUrl } from '../utils/message-links'
+import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../utils/media-library'
 import { getArchiveDatabase } from './archive-database'
 
 /** Insert one bounded import batch without monopolizing the JavaScript thread. */
@@ -102,6 +104,123 @@ export interface MessageSearchPage {
   results: MessageSearchResult[]
   hasMore: boolean
   nextCursor: number | null
+}
+
+interface AttachmentRow {
+  id: number
+  sender: string | null
+  text: string | null
+  mediaType: string | null
+  mediaUri: string | null
+  mediaFilename: string | null
+  mediaSize: number | null
+  mediaWidth: number | null
+  mediaHeight: number | null
+  mediaDuration: number | null
+  mediaPreviewUri: string | null
+  timestamp: number
+}
+
+const ATTACHMENT_COLUMNS = `m.id, m.sender, m.text, m.mediaType, m.mediaUri,
+  m.mediaFilename, m.mediaSize, m.mediaWidth, m.mediaHeight, m.mediaDuration,
+  m.mediaPreviewUri, m.timestamp`
+
+function rowsToAttachmentPage(
+  rows: AttachmentRow[],
+  filter: AttachmentFilter,
+  limit: number,
+  reverse: boolean
+): AttachmentPage {
+  const hasMore = rows.length > limit
+  const pageRows = rows.slice(0, limit)
+  if (reverse) pageRows.reverse()
+
+  return {
+    records: pageRows.map(
+      (row): AttachmentRecord => ({
+        sequence: row.id,
+        messageId: `msg-${row.id}`,
+        type: filter,
+        sender: row.sender,
+        timestamp: new Date(row.timestamp),
+        text: row.text,
+        mediaUri: row.mediaUri,
+        previewUri: row.mediaPreviewUri,
+        filename: row.mediaFilename,
+        size: row.mediaSize,
+        width: row.mediaWidth,
+        height: row.mediaHeight,
+        duration: row.mediaDuration,
+        url: filter === 'link' && row.text ? extractFirstUrl(row.text) : null
+      })
+    ),
+    hasMore
+  }
+}
+
+async function queryAttachmentRows(
+  chatId: string,
+  filter: AttachmentFilter,
+  operator: '<' | '>',
+  cursor: number,
+  order: 'ASC' | 'DESC',
+  limit: number
+): Promise<AttachmentRow[]> {
+  const db = getArchiveDatabase()
+  if (filter === 'link') {
+    return db.getAllAsync<AttachmentRow>(
+      `SELECT ${ATTACHMENT_COLUMNS}
+       FROM messages_fts
+       JOIN messages AS m ON m.id = messages_fts.rowid
+       WHERE messages_fts MATCH '"http"*'
+         AND (instr(lower(m.text), 'http://') > 0 OR instr(lower(m.text), 'https://') > 0)
+         AND m.chatId = ? AND m.id ${operator} ?
+       ORDER BY m.id ${order}
+       LIMIT ?`,
+      chatId,
+      cursor,
+      limit + 1
+    )
+  }
+
+  return db.getAllAsync<AttachmentRow>(
+    `SELECT ${ATTACHMENT_COLUMNS}
+     FROM messages AS m
+     WHERE m.chatId = ? AND m.mediaType = ? AND m.id ${operator} ?
+     ORDER BY m.id ${order}
+     LIMIT ?`,
+    chatId,
+    filter,
+    cursor,
+    limit + 1
+  )
+}
+
+export async function getOlderAttachmentPage(
+  chatId: string,
+  filter: AttachmentFilter,
+  beforeSequence: number | null,
+  limit: number
+): Promise<AttachmentPage> {
+  const rows = await queryAttachmentRows(
+    chatId,
+    filter,
+    '<',
+    beforeSequence ?? Number.MAX_SAFE_INTEGER,
+    'DESC',
+    limit
+  )
+  return rowsToAttachmentPage(rows, filter, limit, false)
+}
+
+export async function getNewerAttachmentPage(
+  chatId: string,
+  filter: AttachmentFilter,
+  afterSequence: number,
+  limit: number
+): Promise<AttachmentPage> {
+  const rows = await queryAttachmentRows(chatId, filter, '>', afterSequence, 'ASC', limit)
+  return rowsToAttachmentPage(rows, filter, limit, true)
 }
 
 const MESSAGE_PAGE_COLUMNS = `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,

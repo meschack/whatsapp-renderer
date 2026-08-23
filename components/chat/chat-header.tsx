@@ -7,9 +7,15 @@ interface ChatHeaderProps {
   chatName: string
   participantCount: number
   onSearchPress?: () => void
+  onMediaPress?: () => void
 }
 
-export function ChatHeader({ chatName, participantCount, onSearchPress }: ChatHeaderProps) {
+export function ChatHeader({
+  chatName,
+  participantCount,
+  onSearchPress,
+  onMediaPress
+}: ChatHeaderProps) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
 
@@ -36,6 +42,15 @@ export function ChatHeader({ chatName, participantCount, onSearchPress }: ChatHe
         </View>
 
         <View className='h-10 flex-row items-center rounded-full border border-white/5 bg-black/10 px-1'>
+          {onMediaPress && (
+            <Pressable
+              accessibilityLabel='Browse chat media'
+              className='size-9 items-center justify-center'
+              onPress={onMediaPress}
+            >
+              <Ionicons name='images-outline' size={21} color='#E9EDEF' />
+            </Pressable>
+          )}
           {onSearchPress && (
             <Pressable
               accessibilityLabel='Search messages'
