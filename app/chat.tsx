@@ -4,7 +4,9 @@ import { ChatCalendar } from '@/components/chat/chat-calendar'
 import { BookmarkBrowser } from '@/components/chat/bookmark-browser'
 import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
+import { ChatInsights } from '@/components/chat/chat-insights'
 import { ChatSearch } from '@/components/chat/chat-search'
+import { ChatToolsMenu } from '@/components/chat/chat-tools-menu'
 import { MediaLibrary } from '@/components/chat/media-library'
 import {
   MessageActionSheet,
@@ -60,6 +62,8 @@ export default function ChatScreen() {
   const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false)
   const [isBookmarkBrowserOpen, setIsBookmarkBrowserOpen] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false)
+  const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
   const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [actionSelection, setActionSelection] = useState<MessageActionSelection | null>(null)
@@ -254,6 +258,8 @@ export default function ChatScreen() {
       setIsMediaLibraryOpen(false)
       setIsBookmarkBrowserOpen(false)
       setIsCalendarOpen(false)
+      setIsInsightsOpen(false)
+      setIsToolsMenuOpen(false)
     },
     [chatData?.chatId, positionWriter]
   )
@@ -289,39 +295,15 @@ export default function ChatScreen() {
           chatName={chatData.chatName}
           participantCount={chatData.participants.length}
           diagnosticsCount={diagnosticsCount}
-          onDiagnosticsPress={
-            chatData.importDiagnostics
-              ? () =>
-                  Alert.alert(
-                    'Import report',
-                    formatImportDiagnosticsReport(chatData.importDiagnostics!)
-                  )
-              : undefined
-          }
-          onCalendarPress={() => {
-            setIsSearchOpen(false)
-            setIsMediaLibraryOpen(false)
-            setIsBookmarkBrowserOpen(false)
-            setIsCalendarOpen(true)
-          }}
           onSearchPress={() => {
             setIsMediaLibraryOpen(false)
             setIsBookmarkBrowserOpen(false)
             setIsCalendarOpen(false)
+            setIsInsightsOpen(false)
+            setIsToolsMenuOpen(false)
             setIsSearchOpen(true)
           }}
-          onMediaPress={() => {
-            setIsSearchOpen(false)
-            setIsBookmarkBrowserOpen(false)
-            setIsCalendarOpen(false)
-            setIsMediaLibraryOpen(true)
-          }}
-          onBookmarksPress={() => {
-            setIsSearchOpen(false)
-            setIsMediaLibraryOpen(false)
-            setIsCalendarOpen(false)
-            setIsBookmarkBrowserOpen(true)
-          }}
+          onMorePress={() => setIsToolsMenuOpen(open => !open)}
         />
 
         <View className='flex-1'>
@@ -449,6 +431,56 @@ export default function ChatScreen() {
                 onSelect={handleDateJump}
               />
             </View>
+          )}
+
+          {isInsightsOpen && (
+            <View className='absolute inset-0'>
+              <ChatInsights chatId={chatData.chatId} onClose={() => setIsInsightsOpen(false)} />
+            </View>
+          )}
+
+          {isToolsMenuOpen && (
+            <ChatToolsMenu
+              diagnosticsCount={diagnosticsCount}
+              onClose={() => setIsToolsMenuOpen(false)}
+              onCalendar={() => {
+                setIsSearchOpen(false)
+                setIsMediaLibraryOpen(false)
+                setIsBookmarkBrowserOpen(false)
+                setIsInsightsOpen(false)
+                setIsCalendarOpen(true)
+              }}
+              onMedia={() => {
+                setIsSearchOpen(false)
+                setIsBookmarkBrowserOpen(false)
+                setIsCalendarOpen(false)
+                setIsInsightsOpen(false)
+                setIsMediaLibraryOpen(true)
+              }}
+              onBookmarks={() => {
+                setIsSearchOpen(false)
+                setIsMediaLibraryOpen(false)
+                setIsCalendarOpen(false)
+                setIsInsightsOpen(false)
+                setIsBookmarkBrowserOpen(true)
+              }}
+              onInsights={() => {
+                setIsSearchOpen(false)
+                setIsMediaLibraryOpen(false)
+                setIsBookmarkBrowserOpen(false)
+                setIsCalendarOpen(false)
+                setIsInsightsOpen(true)
+              }}
+              onDiagnostics={
+                chatData.importDiagnostics
+                  ? () =>
+                      Alert.alert(
+                        'Import report',
+                        formatImportDiagnosticsReport(chatData.importDiagnostics!)
+                      )
+                  : undefined
+              }
+            />
           )}
         </View>
         <MessageActionSheet
