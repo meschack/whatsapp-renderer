@@ -9,6 +9,7 @@ vi.mock('../store/archive-database', () => ({
 
 import {
   getInitialMessagePage,
+  getBookmarkPage,
   getNewerAttachmentPage,
   getOlderAttachmentPage,
   isMessageBookmarked,
@@ -274,6 +275,42 @@ describe('media library pages', () => {
     expect(older.trimmedNewer).toBe(true)
     expect(newer.records.map(record => record.sequence)).toEqual([8, 6, 4])
     expect(newer.trimmedOlder).toBe(true)
+  })
+})
+
+describe('bookmark pages', () => {
+  let sqlite: DatabaseSync
+
+  beforeEach(() => {
+    sqlite = createDatabase()
+    sqlite.exec(`
+      INSERT INTO message_bookmarks VALUES (2, 'chat-1', 1000);
+      INSERT INTO message_bookmarks VALUES (4, 'chat-1', 2000);
+      INSERT INTO message_bookmarks VALUES (6, 'chat-1', 3000);
+      INSERT INTO message_bookmarks VALUES (8, 'chat-1', 3000);
+    `)
+    databaseState.database = new TestMessageDatabase(sqlite)
+  })
+
+  afterEach(() => {
+    databaseState.database = null
+    sqlite.close()
+  })
+
+  it('returns stable paginated bookmark summaries with source identity', async () => {
+    const first = await getBookmarkPage('chat-1', null, 2)
+    const second = await getBookmarkPage('chat-1', first.nextCursor, 2)
+
+    expect(first.records.map(record => record.sequence)).toEqual([8, 6])
+    expect(first.records[0]).toMatchObject({
+      messageId: 'msg-8',
+      sender: 'Alice',
+      timestamp: new Date(8_000),
+      excerpt: 'message 8'
+    })
+    expect(first.hasMore).toBe(true)
+    expect(second.records.map(record => record.sequence)).toEqual([4, 2])
+    expect(second.hasMore).toBe(false)
   })
 })
 

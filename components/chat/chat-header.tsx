@@ -8,13 +8,15 @@ interface ChatHeaderProps {
   participantCount: number
   onSearchPress?: () => void
   onMediaPress?: () => void
+  onBookmarksPress?: () => void
 }
 
 export function ChatHeader({
   chatName,
   participantCount,
   onSearchPress,
-  onMediaPress
+  onMediaPress,
+  onBookmarksPress
 }: ChatHeaderProps) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -42,6 +44,15 @@ export function ChatHeader({
         </View>
 
         <View className='h-10 flex-row items-center rounded-full border border-white/5 bg-black/10 px-1'>
+          {onBookmarksPress && (
+            <Pressable
+              accessibilityLabel='Browse bookmarks'
+              className='size-9 items-center justify-center'
+              onPress={onBookmarksPress}
+            >
+              <Ionicons name='bookmark-outline' size={20} color='#E9EDEF' />
+            </Pressable>
+          )}
           {onMediaPress && (
             <Pressable
               accessibilityLabel='Browse chat media'
@@ -60,12 +71,6 @@ export function ChatHeader({
               <Ionicons name='search-outline' size={22} color='#E9EDEF' />
             </Pressable>
           )}
-          <Pressable className='size-9 items-center justify-center'>
-            <Ionicons name='videocam-outline' size={23} color='#E9EDEF' />
-          </Pressable>
-          <Pressable className='size-9 items-center justify-center'>
-            <Ionicons name='call-outline' size={23} color='#E9EDEF' />
-          </Pressable>
         </View>
       </View>
     </View>

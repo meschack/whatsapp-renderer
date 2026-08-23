@@ -3,6 +3,7 @@ import type { TimelineRecord } from '@/utils/chat-timeline'
 import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/message-search'
 import { extractFirstUrl } from '../utils/message-links'
 import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../utils/media-library'
+import type { BookmarkCursor, BookmarkPage, BookmarkRecord } from '../utils/bookmarks'
 import { getArchiveDatabase } from './archive-database'
 
 /** Insert one bounded import batch without monopolizing the JavaScript thread. */
@@ -416,6 +417,61 @@ export async function setMessageBookmarked(
     messageSequence,
     chatId
   )
+}
+
+export async function getBookmarkPage(
+  chatId: string,
+  cursor: BookmarkCursor | null,
+  limit: number
+): Promise<BookmarkPage> {
+  if (limit <= 0) return { records: [], hasMore: false, nextCursor: null }
+
+  const db = getArchiveDatabase()
+  const cursorClause = cursor
+    ? `AND (
+         b.createdAt < ? OR
+         (b.createdAt = ? AND b.messageId < ?)
+       )`
+    : ''
+  const cursorParams = cursor ? [cursor.createdAt, cursor.createdAt, cursor.messageSequence] : []
+  const rows = await db.getAllAsync<{
+    messageId: number
+    sender: string | null
+    timestamp: number
+    excerpt: string | null
+    mediaType: string | null
+    createdAt: number
+  }>(
+    `SELECT b.messageId, m.sender, m.timestamp,
+            substr(COALESCE(NULLIF(trim(m.text), ''), m.mediaFilename, 'Message'), 1, 240) AS excerpt,
+            m.mediaType, b.createdAt
+     FROM message_bookmarks AS b
+     JOIN messages AS m ON m.id = b.messageId AND m.chatId = b.chatId
+     WHERE b.chatId = ? ${cursorClause}
+     ORDER BY b.createdAt DESC, b.messageId DESC
+     LIMIT ?`,
+    chatId,
+    ...cursorParams,
+    limit + 1
+  )
+  const pageRows = rows.slice(0, limit)
+  const last = pageRows.at(-1)
+
+  return {
+    records: pageRows.map(
+      (row): BookmarkRecord => ({
+        sequence: row.messageId,
+        messageId: `msg-${row.messageId}`,
+        sender: row.sender,
+        timestamp: new Date(row.timestamp),
+        excerpt: row.excerpt ?? 'Message',
+        mediaType: row.mediaType as BookmarkRecord['mediaType'],
+        createdAt: row.createdAt
+      })
+    ),
+    hasMore: rows.length > limit,
+    nextCursor: last ? { createdAt: last.createdAt, messageSequence: last.messageId } : null
+  }
 }
 
 /** Load history using a stable keyset cursor instead of an increasingly expensive OFFSET. */
