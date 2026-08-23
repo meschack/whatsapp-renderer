@@ -83,6 +83,7 @@ export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPrevie
   return (
     <Pressable
       accessibilityLabel={status === 'loaded' ? `Open ${domain}` : `Load preview from ${domain}`}
+      accessibilityRole={status === 'loaded' ? 'link' : 'button'}
       onPress={() => void handlePress()}
       className={`mt-1 mb-1 h-22 flex-row overflow-hidden rounded-lg ${
         isMine ? 'bg-wa-bubble-mine/80' : 'bg-wa-bubble-other/80'

@@ -147,6 +147,9 @@ const BookmarkRow = memo(function BookmarkRow({
 
   return (
     <Pressable
+      accessibilityLabel={`${record.sender ?? 'System'}, ${record.excerpt}, ${time}`}
+      accessibilityHint='Jump to bookmarked message'
+      accessibilityRole='button'
       className='mb-2 flex-row items-start rounded-xl bg-[#202C33] px-3 py-3 active:bg-[#2A3942]'
       onPress={onPress}
     >

@@ -189,7 +189,13 @@ const SearchResultRow = memo(function SearchResultRow({
   const segments = useMemo(() => parseHighlightedExcerpt(result.excerpt), [result.excerpt])
 
   return (
-    <Pressable className='border-b border-white/5 px-4 py-3 active:bg-white/5' onPress={onPress}>
+    <Pressable
+      accessibilityLabel={`${result.sender ?? 'System'}, ${result.excerpt}`}
+      accessibilityHint='Jump to message'
+      accessibilityRole='button'
+      className='border-b border-white/5 px-4 py-3 active:bg-white/5'
+      onPress={onPress}
+    >
       <View className='mb-1 flex-row items-center justify-between gap-3'>
         <Text className='flex-1 text-[13px] font-medium text-[#00A884]' numberOfLines={1}>
           {result.sender ?? 'System'}

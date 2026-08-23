@@ -2,6 +2,7 @@ import { View, Text, Pressable } from '@/src/tw'
 import type { SavedChat } from '@/models/types'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
 import { Ionicons } from '@expo/vector-icons'
+import { performHapticFeedback } from '@/utils/haptic-feedback'
 
 interface ChatListItemProps {
   chat: SavedChat
@@ -35,9 +36,14 @@ export const ChatListItem = ({ chat, onPress, onLongPress }: ChatListItemProps) 
   return (
     <Pressable
       accessibilityLabel={`${chat.chatName}, ${chat.lastMessageText ?? 'Media message'}`}
+      accessibilityHint='Double tap to open. Long press for chat actions.'
+      accessibilityRole='button'
       className='flex-row items-center gap-3 px-4 py-3'
       onPress={onPress}
-      onLongPress={onLongPress}
+      onLongPress={() => {
+        performHapticFeedback('action')
+        onLongPress()
+      }}
     >
       <GeneratedAvatar name={chat.chatName} size={52} />
 

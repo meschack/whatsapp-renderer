@@ -48,7 +48,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 12
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 13
 
 const migrations: Migration[] = [
   {
@@ -267,6 +267,17 @@ const migrations: Migration[] = [
       await database.exec(
         'CREATE INDEX IF NOT EXISTS idx_saved_chats_library ON saved_chats(isArchived, isPinned, pinnedAt, lastMessageTime)'
       )
+    }
+  },
+  {
+    version: 13,
+    async migrate(database) {
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS app_preferences (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+      `)
     }
   }
 ]

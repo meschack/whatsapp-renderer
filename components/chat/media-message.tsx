@@ -133,7 +133,7 @@ const ChatImage = memo(function ChatImage({
 
   return (
     <>
-      <Pressable onPress={onOpenModal}>
+      <Pressable accessibilityLabel='Open image' accessibilityRole='button' onPress={onOpenModal}>
         <Image
           source={{ uri: previewUri ?? uri }}
           recyclingKey={previewUri ?? uri}
@@ -144,6 +144,8 @@ const ChatImage = memo(function ChatImage({
       {isModalVisible && (
         <Modal visible transparent animationType='fade' onRequestClose={onCloseModal}>
           <Pressable
+            accessibilityLabel='Close image'
+            accessibilityRole='button'
             style={{
               flex: 1,
               backgroundColor: 'rgba(0,0,0,0.95)',
@@ -212,6 +214,7 @@ const DocumentMessage = memo(function DocumentMessage({ message }: { message: Me
     <View className='max-w-[280px] min-w-[245px] px-1 py-1'>
       <Pressable
         accessibilityLabel={`Open ${filename}`}
+        accessibilityRole='button'
         className='flex-row items-center rounded-lg bg-black/10 px-2.5 py-2.5 active:bg-black/20'
         onPress={() => void runAction('open')}
       >
@@ -237,7 +240,8 @@ const DocumentMessage = memo(function DocumentMessage({ message }: { message: Me
       <View className='mt-1 flex-row justify-end'>
         <Pressable
           accessibilityLabel={`Share ${filename}`}
-          className='min-h-10 flex-row items-center rounded-full px-3 active:bg-black/15'
+          accessibilityRole='button'
+          className='min-h-11 flex-row items-center rounded-full px-3 active:bg-black/15'
           onPress={event => {
             event.stopPropagation()
             void runAction('share')
@@ -275,6 +279,8 @@ const LazyVideoMessage = memo(function LazyVideoMessage({
   if (!activated) {
     return (
       <Pressable
+        accessibilityLabel='Play video'
+        accessibilityRole='button'
         className='items-center justify-center overflow-hidden rounded-lg bg-black/50'
         style={{ width: previewWidth, height: previewHeight }}
         onPress={() => setActivated(true)}

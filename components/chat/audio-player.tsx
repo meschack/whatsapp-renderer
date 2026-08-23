@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useRecyclingState } from '@shopify/flash-list'
 import { memo, useCallback, useEffect, useMemo } from 'react'
 import {
+  type AccessibilityActionEvent,
   type GestureResponderEvent,
   type LayoutChangeEvent,
   useWindowDimensions
@@ -27,6 +28,7 @@ import Animated, {
 import { useAudioPlayerControls } from './audio-player-provider'
 import { MessageMeta } from './message-meta'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
+import { performHapticFeedback } from '@/utils/haptic-feedback'
 
 interface AudioPlayerProps {
   message: Message
@@ -86,6 +88,18 @@ export const AudioPlayer = memo(function AudioPlayer({
     [setWaveformWidth]
   )
 
+  const handleAccessibilitySeek = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (!state.isActive) return
+      const delta = event.nativeEvent.actionName === 'increment' ? 0.1 : -0.1
+      const next = Math.max(0, Math.min(1, progress + delta))
+      animatedProgress.value = next
+      actions.seek(next)
+      performHapticFeedback('selection')
+    },
+    [actions, animatedProgress, progress, state.isActive]
+  )
+
   const bars = useMemo(() => {
     return message.mediaWaveform ?? getFallbackWaveform(uri ?? 'voice-note')
   }, [message.mediaWaveform, uri])
@@ -121,7 +135,13 @@ export const AudioPlayer = memo(function AudioPlayer({
 
   const trailingControl = showPlaybackRate ? (
     <Pressable
-      onPress={actions.cycleRate}
+      accessibilityLabel={`Playback speed ${formatPlaybackRate(state.playbackRate)}`}
+      accessibilityHint='Double tap to change playback speed'
+      accessibilityRole='button'
+      onPress={() => {
+        actions.cycleRate()
+        performHapticFeedback('selection')
+      }}
       className='h-7 w-11 items-center justify-center rounded-full'
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.58)' }}
     >
@@ -135,12 +155,32 @@ export const AudioPlayer = memo(function AudioPlayer({
 
   return (
     <View className='max-w-full flex-row items-center' style={{ width: playerWidth }}>
-      <Pressable onPress={handlePlayPause} className='h-11 w-10 items-center justify-center'>
+      <Pressable
+        accessibilityLabel={`${isPlaying ? 'Pause' : 'Play'} voice message`}
+        accessibilityRole='button'
+        accessibilityState={{ disabled: !uri }}
+        className='size-11 items-center justify-center'
+        disabled={!uri}
+        onPress={handlePlayPause}
+      >
         <Ionicons name={isPlaying ? 'pause' : 'play'} size={26} color='#AEBAC1' />
       </Pressable>
 
       <View className='mx-1 flex-1 overflow-hidden'>
-        <Pressable onPress={handleSeek} className='py-0.5'>
+        <Pressable
+          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+          accessibilityLabel='Voice message playback position'
+          accessibilityRole='adjustable'
+          accessibilityValue={{
+            min: 0,
+            max: 100,
+            now: Math.round(progress * 100),
+            text: `${displayDuration} played`
+          }}
+          onAccessibilityAction={handleAccessibilitySeek}
+          onPress={handleSeek}
+          className='py-0.5'
+        >
           <View
             onLayout={handleWaveformLayout}
             className='relative h-7 justify-center overflow-visible'

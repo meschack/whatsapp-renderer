@@ -90,6 +90,8 @@ export default function SelectSenderScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12 }}
         renderItem={({ item }) => (
           <Pressable
+            accessibilityLabel={`Select ${item} as me`}
+            accessibilityRole='button'
             className='flex-row items-center gap-3 px-3 py-4'
             onPress={() => handleSelect(item)}
           >
