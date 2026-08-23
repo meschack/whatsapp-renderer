@@ -7,7 +7,14 @@ vi.mock('../store/archive-database', () => ({
   getArchiveDatabase: () => databaseState.database
 }))
 
-import { getInitialMessagePage, saveChatPosition, searchMessages } from '../store/message-database'
+import {
+  getInitialMessagePage,
+  getNewerAttachmentPage,
+  getOlderAttachmentPage,
+  saveChatPosition,
+  searchMessages
+} from '../store/message-database'
+import { mergeAttachmentWindow } from '../utils/media-library'
 import { buildSearchExpression, parseHighlightedExcerpt } from '../utils/message-search'
 import { createThrottledWriter } from '../utils/throttled-writer'
 
@@ -177,6 +184,78 @@ describe('throttled position writer', () => {
     expect(write).toHaveBeenLastCalledWith(21)
     vi.runAllTimers()
     expect(write).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('media library pages', () => {
+  let sqlite: DatabaseSync
+
+  beforeEach(() => {
+    sqlite = createDatabase()
+    sqlite.exec(`
+      UPDATE messages SET mediaType = 'image', mediaUri = NULL,
+        mediaFilename = 'missing.jpg', mediaSize = 120 WHERE id = 2;
+      UPDATE messages SET mediaType = 'image', mediaUri = 'file:///4.jpg',
+        mediaFilename = '4.jpg', mediaSize = 400 WHERE id = 4;
+      UPDATE messages SET mediaType = 'document', mediaUri = 'file:///5.pdf',
+        mediaFilename = 'notes.pdf', mediaSize = 500 WHERE id = 5;
+      UPDATE messages SET mediaType = 'image', mediaUri = 'file:///6.jpg',
+        mediaFilename = '6.jpg', mediaSize = 600 WHERE id = 6;
+      UPDATE messages SET mediaType = 'image', mediaUri = 'file:///8.jpg',
+        mediaFilename = '8.jpg', mediaSize = 800 WHERE id = 8;
+      UPDATE messages SET text = 'See https://example.com/three' WHERE id = 3;
+      UPDATE messages SET text = 'See https://example.com/nine' WHERE id = 9;
+    `)
+    databaseState.database = new TestMessageDatabase(sqlite)
+  })
+
+  afterEach(() => {
+    databaseState.database = null
+    sqlite.close()
+  })
+
+  it('uses stable keysets in both directions and preserves missing-file identity', async () => {
+    const newest = await getOlderAttachmentPage('chat-1', 'image', null, 2)
+    const older = await getOlderAttachmentPage(
+      'chat-1',
+      'image',
+      newest.records.at(-1)!.sequence,
+      2
+    )
+    const newer = await getNewerAttachmentPage('chat-1', 'image', 2, 2)
+
+    expect(newest.records.map(record => record.sequence)).toEqual([8, 6])
+    expect(newest.hasMore).toBe(true)
+    expect(older.records.map(record => record.sequence)).toEqual([4, 2])
+    expect(older.records[1]).toMatchObject({
+      filename: 'missing.jpg',
+      mediaUri: null,
+      size: 120
+    })
+    expect(newer.records.map(record => record.sequence)).toEqual([6, 4])
+    expect(newer.hasMore).toBe(true)
+  })
+
+  it('filters documents and indexed links without scanning messages in JavaScript', async () => {
+    const documents = await getOlderAttachmentPage('chat-1', 'document', null, 10)
+    const links = await getOlderAttachmentPage('chat-1', 'link', null, 10)
+
+    expect(documents.records.map(record => record.filename)).toEqual(['notes.pdf'])
+    expect(links.records.map(record => [record.sequence, record.url])).toEqual([
+      [9, 'https://example.com/nine'],
+      [3, 'https://example.com/three']
+    ])
+  })
+
+  it('caps the retained window and marks the discarded edge as reloadable', async () => {
+    const records = (await getOlderAttachmentPage('chat-1', 'image', null, 10)).records
+    const older = mergeAttachmentWindow(records.slice(0, 2), records.slice(2), 'older', 3)
+    const newer = mergeAttachmentWindow(older.records, [records[0]], 'newer', 3)
+
+    expect(older.records.map(record => record.sequence)).toEqual([6, 4, 2])
+    expect(older.trimmedNewer).toBe(true)
+    expect(newer.records.map(record => record.sequence)).toEqual([8, 6, 4])
+    expect(newer.trimmedOlder).toBe(true)
   })
 })
 

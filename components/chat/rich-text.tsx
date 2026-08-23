@@ -1,8 +1,7 @@
 import { Text } from '@/src/tw'
 import { memo, useCallback, useMemo, type ReactNode } from 'react'
 import { Linking } from 'react-native'
-
-const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/g
+import { extractFirstUrl, URL_REGEX } from '@/utils/message-links'
 
 interface RichTextProps {
   text: string
@@ -62,7 +61,4 @@ function parseTextWithLinks(text: string): TextPart[] {
   return parts
 }
 
-export function extractFirstUrl(text: string): string | null {
-  const match = text.match(URL_REGEX)
-  return match ? match[0] : null
-}
+export { extractFirstUrl }

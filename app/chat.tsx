@@ -3,6 +3,7 @@ import { ChatBubble } from '@/components/chat/chat-bubble'
 import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
 import { ChatSearch } from '@/components/chat/chat-search'
+import { MediaLibrary } from '@/components/chat/media-library'
 import { DateSeparator } from '@/components/chat/date-separator'
 import { SystemMessage } from '@/components/chat/system-message'
 import { useChatPerformance } from '@/hooks/use-chat-performance'
@@ -13,6 +14,7 @@ import { useChatStore } from '@/store/chat-store'
 import { saveChatPosition, type MessageSearchResult } from '@/store/message-database'
 import { formatDateLabel } from '@/utils/chat-timeline'
 import { createThrottledWriter } from '@/utils/throttled-writer'
+import type { AttachmentRecord } from '@/utils/media-library'
 import { Ionicons } from '@expo/vector-icons'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -44,6 +46,7 @@ export default function ChatScreen() {
   const [visibleDate, setVisibleDate] = useState<string | null>(null)
   const [showDateChip, setShowDateChip] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false)
   const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const lastScrollState = useRef(false)
@@ -213,17 +216,28 @@ export default function ChatScreen() {
     if (hasNewer && !isLoadingNewer) void loadNewer()
   }, [hasNewer, isLoadingNewer, loadNewer])
 
-  const handleSearchResult = useCallback(
-    (result: MessageSearchResult) => {
+  const jumpToMessage = useCallback(
+    (sequence: number, messageId: string) => {
       positionWriter.cancel()
-      void saveChatPosition(chatData?.chatId ?? '', result.sequence).catch(error => {
+      void saveChatPosition(chatData?.chatId ?? '', sequence).catch(error => {
         console.error('Failed to save the search destination', error)
       })
-      setJumpRequest(current => ({ sequence: result.sequence, key: (current?.key ?? 0) + 1 }))
-      setHighlightedMessageId(result.messageId)
+      setJumpRequest(current => ({ sequence, key: (current?.key ?? 0) + 1 }))
+      setHighlightedMessageId(messageId)
       setIsSearchOpen(false)
+      setIsMediaLibraryOpen(false)
     },
     [chatData?.chatId, positionWriter]
+  )
+
+  const handleSearchResult = useCallback(
+    (result: MessageSearchResult) => jumpToMessage(result.sequence, result.messageId),
+    [jumpToMessage]
+  )
+
+  const handleMediaJump = useCallback(
+    (record: AttachmentRecord) => jumpToMessage(record.sequence, record.messageId),
+    [jumpToMessage]
   )
 
   if (!chatData) {
@@ -236,7 +250,14 @@ export default function ChatScreen() {
         <ChatHeader
           chatName={chatData.chatName}
           participantCount={chatData.participants.length}
-          onSearchPress={() => setIsSearchOpen(true)}
+          onSearchPress={() => {
+            setIsMediaLibraryOpen(false)
+            setIsSearchOpen(true)
+          }}
+          onMediaPress={() => {
+            setIsSearchOpen(false)
+            setIsMediaLibraryOpen(true)
+          }}
         />
 
         <View className='flex-1'>
@@ -332,6 +353,16 @@ export default function ChatScreen() {
                 chatId={chatData.chatId}
                 onClose={() => setIsSearchOpen(false)}
                 onSelect={handleSearchResult}
+              />
+            </View>
+          )}
+
+          {isMediaLibraryOpen && (
+            <View className='absolute inset-0'>
+              <MediaLibrary
+                chatId={chatData.chatId}
+                onClose={() => setIsMediaLibraryOpen(false)}
+                onJump={handleMediaJump}
               />
             </View>
           )}
