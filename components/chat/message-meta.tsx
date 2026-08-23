@@ -2,6 +2,7 @@ import type { Message } from '@/models/types'
 import { Text, View } from '@/src/tw'
 import { Ionicons } from '@expo/vector-icons'
 import { cn } from '@/utils/css'
+import { useChatAppearance } from './chat-appearance-context'
 
 function formatTime(date: Date): string {
   const hours = date.getHours()
@@ -25,9 +26,11 @@ export function MessageMeta({
   className?: string
   textClassName?: string
 }) {
+  const { textScale } = useChatAppearance()
   return (
     <View className={cn('flex-row items-center gap-1', className)}>
       <Text
+        style={{ fontSize: 11 * textScale }}
         className={cn(
           'text-[11px]',
           message.isMine ? 'text-white/60' : 'text-wa-text-timestamp',
@@ -43,8 +46,9 @@ export function MessageMeta({
 
 /** Text-native metadata participates in line wrapping instead of covering message copy. */
 export function InlineMessageMeta({ message }: { message: Message }) {
+  const { textScale } = useChatAppearance()
   return (
-    <Text className='text-[11px] leading-5'>
+    <Text style={{ fontSize: 11 * textScale, lineHeight: 20 * textScale }}>
       {'  '}
       <Text className={message.isMine ? 'text-white/60' : 'text-wa-text-timestamp'}>
         {formatMessageTimestamp(message)}

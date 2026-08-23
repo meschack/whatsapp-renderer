@@ -10,6 +10,7 @@ import { useRecyclingState } from '@shopify/flash-list'
 import { Image } from 'expo-image'
 import { memo, useCallback, useEffect, useRef } from 'react'
 import { ActivityIndicator, Linking } from 'react-native'
+import { useChatAppearance } from './chat-appearance-context'
 
 interface LinkPreviewProps {
   url: string
@@ -17,6 +18,7 @@ interface LinkPreviewProps {
 }
 
 export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPreviewProps) {
+  const { textScale } = useChatAppearance()
   const cached = getCachedLinkPreview(url)
   const [preview, setPreview] = useRecyclingState<LinkPreviewData | null>(cached.data, [url])
   const [status, setStatus] = useRecyclingState<
@@ -90,14 +92,26 @@ export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPrevie
       }`}
     >
       <View className='min-w-0 flex-1 justify-center px-3 py-2'>
-        <Text className='text-wa-text-secondary text-[11px]' numberOfLines={1}>
+        <Text
+          className='text-wa-text-secondary'
+          numberOfLines={1}
+          style={{ fontSize: 11 * textScale }}
+        >
           {preview?.siteName ?? domain}
         </Text>
-        <Text className='text-wa-text-primary mt-0.5 text-[13px] font-medium' numberOfLines={2}>
+        <Text
+          className='text-wa-text-primary mt-0.5 font-medium'
+          numberOfLines={2}
+          style={{ fontSize: 13 * textScale }}
+        >
           {preview?.title ?? getStatusLabel(status, domain)}
         </Text>
         {preview?.description && (
-          <Text className='text-wa-text-secondary mt-0.5 text-[11px]' numberOfLines={1}>
+          <Text
+            className='text-wa-text-secondary mt-0.5'
+            numberOfLines={1}
+            style={{ fontSize: 11 * textScale }}
+          >
             {preview.description}
           </Text>
         )}

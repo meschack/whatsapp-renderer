@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { View, Text, Pressable } from '@/src/tw'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
+import { useChatAppearance } from './chat-appearance-context'
 
 interface ChatHeaderProps {
   chatName: string
@@ -21,6 +22,7 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const { textScale } = useChatAppearance()
 
   return (
     <View className='bg-wa-header' style={{ paddingTop: insets.top }}>
@@ -37,11 +39,15 @@ export function ChatHeader({
         <GeneratedAvatar name={chatName} size={38} />
 
         <View className='ml-1 flex-1'>
-          <Text className='text-wa-text-primary text-[16px] font-medium' numberOfLines={1}>
+          <Text
+            className='text-wa-text-primary font-medium'
+            numberOfLines={1}
+            style={{ fontSize: 16 * textScale }}
+          >
             {chatName}
           </Text>
           {participantCount > 2 && (
-            <Text className='text-wa-text-secondary text-[11px]'>
+            <Text className='text-wa-text-secondary' style={{ fontSize: 11 * textScale }}>
               {participantCount} participants
             </Text>
           )}

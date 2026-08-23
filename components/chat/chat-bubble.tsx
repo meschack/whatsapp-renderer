@@ -9,6 +9,7 @@ import { RichText, extractFirstUrl } from './rich-text'
 import { useRecyclingState } from '@shopify/flash-list'
 import { getMessageAccessibilityLabel } from '@/utils/accessibility'
 import { performHapticFeedback } from '@/utils/haptic-feedback'
+import { useChatAppearance } from './chat-appearance-context'
 
 const MAX_CHARS = 500
 
@@ -30,6 +31,7 @@ export const ChatBubble = memo(function ChatBubble({
   onLongPress
 }: ChatBubbleProps) {
   const isMine = message.isMine
+  const { textScale } = useChatAppearance()
   const hasMedia = message.mediaType !== null
   const hasText = message.text !== null && message.text.trim().length > 0
   const audioRendersOwnMeta = message.mediaType === 'audio' && !hasText
@@ -92,9 +94,9 @@ export const ChatBubble = memo(function ChatBubble({
       >
         {showSenderName && message.sender ? (
           <Text
-            className='mb-0.5 text-[12.5px] font-semibold'
+            className='mb-0.5 font-semibold'
             numberOfLines={1}
-            style={{ color: senderColor }}
+            style={{ color: senderColor, fontSize: 12.5 * textScale }}
           >
             {message.sender}
           </Text>
@@ -118,7 +120,8 @@ export const ChatBubble = memo(function ChatBubble({
             {isTruncatable && (
               <View>
                 <Text
-                  className='text-wa-checkmark mt-1 text-[13px] font-medium'
+                  className='text-wa-checkmark mt-1 font-medium'
+                  style={{ fontSize: 13 * textScale }}
                   onPress={toggleExpanded}
                 >
                   {expanded ? 'See less' : 'See more'}

@@ -29,6 +29,7 @@ import { useAudioPlayerControls } from './audio-player-provider'
 import { MessageMeta } from './message-meta'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
 import { performHapticFeedback } from '@/utils/haptic-feedback'
+import { useChatAppearance } from './chat-appearance-context'
 
 interface AudioPlayerProps {
   message: Message
@@ -45,6 +46,7 @@ export const AudioPlayer = memo(function AudioPlayer({
 }: AudioPlayerProps) {
   const uri = message.mediaUri
   const isMine = message.isMine
+  const { textScale } = useChatAppearance()
   const actions = useAudioPlayerControls()
   const state = useAudioRowState(uri ?? '')
   const { width: screenWidth } = useWindowDimensions()
@@ -145,7 +147,7 @@ export const AudioPlayer = memo(function AudioPlayer({
       className='h-7 w-11 items-center justify-center rounded-full'
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.58)' }}
     >
-      <Text className='text-[12px] font-medium text-white'>
+      <Text className='font-medium text-white' style={{ fontSize: 12 * textScale }}>
         {formatPlaybackRate(state.playbackRate)}
       </Text>
     </Pressable>
@@ -227,7 +229,10 @@ export const AudioPlayer = memo(function AudioPlayer({
 
         {showMeta && (
           <View className='mt-0.5 flex-row items-center justify-between px-1.5'>
-            <Text className={`text-[11px] ${isMine ? 'text-white/65' : 'text-wa-text-secondary'}`}>
+            <Text
+              className={isMine ? 'text-white/65' : 'text-wa-text-secondary'}
+              style={{ fontSize: 11 * textScale }}
+            >
               {displayDuration}
             </Text>
             <MessageMeta message={message} />

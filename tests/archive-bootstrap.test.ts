@@ -141,6 +141,11 @@ describe('archive bootstrap', () => {
       )
     ).toEqual({ name: 'app_preferences' })
     expect(
+      await database.first<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'chat_appearance'"
+      )
+    ).toEqual({ name: 'chat_appearance' })
+    expect(
       await database.first<{ text: string; isEdited: number }>(
         'SELECT text, isEdited FROM messages WHERE chatId = ?',
         ['chat-1']

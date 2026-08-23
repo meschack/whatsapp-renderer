@@ -2,6 +2,8 @@ import { Text } from '@/src/tw'
 import { memo, useCallback, useMemo, type ReactNode } from 'react'
 import { Linking } from 'react-native'
 import { extractFirstUrl, URL_REGEX } from '@/utils/message-links'
+import { useChatAppearance } from './chat-appearance-context'
+import { getChatTextMetrics } from '@/utils/chat-appearance'
 
 interface RichTextProps {
   text: string
@@ -10,6 +12,8 @@ interface RichTextProps {
 }
 
 export const RichText = memo(function RichText({ text, isMine, trailing }: RichTextProps) {
+  const { textScale } = useChatAppearance()
+  const metrics = getChatTextMetrics(15, 20, textScale)
   const handleLinkPress = useCallback((url: string) => {
     Linking.openURL(url)
   }, [])
@@ -17,14 +21,15 @@ export const RichText = memo(function RichText({ text, isMine, trailing }: RichT
   const parts = useMemo(() => parseTextWithLinks(text), [text])
 
   return (
-    <Text className='text-wa-text-primary shrink text-[15px] leading-5'>
+    <Text className='text-wa-text-primary shrink' style={metrics}>
       {parts.map((part, i) =>
         part.type === 'text' ? (
           (part.value as ReactNode)
         ) : (
           <Text
             key={i}
-            className='text-[15px] leading-5 text-[#25d366] underline'
+            className='text-[#25d366] underline'
+            style={metrics}
             onPress={() => handleLinkPress(part.value)}
           >
             {part.value}

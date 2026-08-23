@@ -9,6 +9,8 @@ import { AudioPlayer } from './audio-player'
 import { useRecyclingState } from '@shopify/flash-list'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
+import { useChatAppearance } from './chat-appearance-context'
+import type { ChatTextScale } from '@/utils/chat-appearance'
 
 interface MediaMessageProps {
   message: Message
@@ -16,10 +18,13 @@ interface MediaMessageProps {
 
 export const MediaMessage = memo(function MediaMessage({ message }: MediaMessageProps) {
   const [imageModalVisible, setImageModalVisible] = useRecyclingState(false, [message.id])
+  const { textScale } = useChatAppearance()
 
   if (!message.mediaType) return null
 
-  if (message.mediaType === 'document') return <DocumentMessage message={message} />
+  if (message.mediaType === 'document') {
+    return <DocumentMessage message={message} textScale={textScale} />
+  }
 
   if (!message.mediaUri) {
     return (
@@ -30,7 +35,8 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
           color={message.isMine ? '#E9EDEF' : '#8696A0'}
         />
         <Text
-          className={`text-sm italic ${message.isMine ? 'text-white/70' : 'text-wa-text-secondary'}`}
+          className={`italic ${message.isMine ? 'text-white/70' : 'text-wa-text-secondary'}`}
+          style={{ fontSize: 14 * textScale }}
         >
           {getMediaLabel(message.mediaType)}
         </Text>
@@ -167,7 +173,13 @@ const ChatImage = memo(function ChatImage({
   )
 })
 
-const DocumentMessage = memo(function DocumentMessage({ message }: { message: Message }) {
+const DocumentMessage = memo(function DocumentMessage({
+  message,
+  textScale
+}: {
+  message: Message
+  textScale: ChatTextScale
+}) {
   const [busyAction, setBusyAction] = useRecyclingState<'open' | 'share' | null>(null, [message.id])
   const uriFilename = message.mediaUri?.split('/').pop()?.split(/[?#]/)[0] ?? null
   const filename = getDecodedFilename(message.mediaFilename ?? uriFilename, 'Document')
@@ -226,10 +238,18 @@ const DocumentMessage = memo(function DocumentMessage({ message }: { message: Me
           />
         </View>
         <View className='ml-3 min-w-0 flex-1 pr-1'>
-          <Text className='text-wa-text-primary text-[13px] font-medium' numberOfLines={2}>
+          <Text
+            className='text-wa-text-primary font-medium'
+            numberOfLines={2}
+            style={{ fontSize: 13 * textScale }}
+          >
             {filename}
           </Text>
-          <Text className='text-wa-text-secondary mt-1 text-[10.5px]' numberOfLines={1}>
+          <Text
+            className='text-wa-text-secondary mt-1'
+            numberOfLines={1}
+            style={{ fontSize: 10.5 * textScale }}
+          >
             {presentation?.label ?? 'Unsupported'} · {formatFileSize(message.mediaSize)}
             {!available ? ' · Missing' : ''}
           </Text>
@@ -248,7 +268,7 @@ const DocumentMessage = memo(function DocumentMessage({ message }: { message: Me
           }}
         >
           <Ionicons name='share-outline' size={17} color='#AEBAC1' />
-          <Text className='text-wa-text-secondary ml-1.5 text-[11px]'>
+          <Text className='text-wa-text-secondary ml-1.5' style={{ fontSize: 11 * textScale }}>
             {busyAction === 'share' ? 'Opening…' : 'Share'}
           </Text>
         </Pressable>

@@ -1,6 +1,8 @@
 import { AudioPlayerProvider } from '@/components/chat/audio-player-provider'
 import { ChatBubble } from '@/components/chat/chat-bubble'
 import { ChatCalendar } from '@/components/chat/chat-calendar'
+import { ChatAppearance } from '@/components/chat/chat-appearance'
+import { ChatAppearanceProvider } from '@/components/chat/chat-appearance-context'
 import { BookmarkBrowser } from '@/components/chat/bookmark-browser'
 import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
@@ -24,6 +26,16 @@ import { formatDateLabel } from '@/utils/chat-timeline'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
 import { isHapticFeedbackEnabled, setHapticFeedbackEnabled } from '@/store/preference-database'
 import { performHapticFeedback } from '@/utils/haptic-feedback'
+import {
+  getChatAppearance,
+  resetChatAppearance,
+  saveChatAppearance
+} from '@/store/chat-appearance-database'
+import {
+  CHAT_WALLPAPERS,
+  DEFAULT_CHAT_APPEARANCE,
+  type ChatAppearancePreference
+} from '@/utils/chat-appearance'
 import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
@@ -67,7 +79,12 @@ export default function ChatScreen() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [isInsightsOpen, setIsInsightsOpen] = useState(false)
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
+  const [isAppearanceOpen, setIsAppearanceOpen] = useState(false)
   const [hapticsEnabled, setHapticsEnabled] = useState(isHapticFeedbackEnabled)
+  const appearanceChatIdRef = useRef(chatData?.chatId ?? '')
+  const [appearance, setAppearance] = useState<ChatAppearancePreference>(() =>
+    getChatAppearance(appearanceChatIdRef.current)
+  )
   const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [actionSelection, setActionSelection] = useState<MessageActionSelection | null>(null)
@@ -87,6 +104,32 @@ export default function ChatScreen() {
     () => buildParticipantColorMap(chatData?.participants ?? []),
     [chatData?.participants]
   )
+  const wallpaper =
+    CHAT_WALLPAPERS.find(option => option.id === appearance.wallpaper) ?? CHAT_WALLPAPERS[0]
+
+  useEffect(() => {
+    const chatId = chatData?.chatId ?? ''
+    if (appearanceChatIdRef.current === chatId) return
+    appearanceChatIdRef.current = chatId
+    setAppearance(getChatAppearance(chatId))
+  }, [chatData?.chatId])
+
+  const updateAppearance = useCallback(
+    (next: ChatAppearancePreference) => {
+      const chatId = chatData?.chatId
+      if (!chatId) return
+      saveChatAppearance(chatId, next)
+      setAppearance(next)
+    },
+    [chatData?.chatId]
+  )
+
+  const resetAppearance = useCallback(() => {
+    const chatId = chatData?.chatId
+    if (!chatId) return
+    resetChatAppearance(chatId)
+    setAppearance(DEFAULT_CHAT_APPEARANCE)
+  }, [chatData?.chatId])
 
   const {
     items,
@@ -309,214 +352,246 @@ export default function ChatScreen() {
 
   return (
     <AudioPlayerProvider>
-      <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
-        <ChatHeader
-          chatName={chatData.chatName}
-          participantCount={chatData.participants.length}
-          diagnosticsCount={diagnosticsCount}
-          onSearchPress={() => {
-            setIsMediaLibraryOpen(false)
-            setIsBookmarkBrowserOpen(false)
-            setIsCalendarOpen(false)
-            setIsInsightsOpen(false)
-            setIsToolsMenuOpen(false)
-            setIsSearchOpen(true)
-          }}
-          onMorePress={() => setIsToolsMenuOpen(open => !open)}
-        />
+      <ChatAppearanceProvider value={appearance}>
+        <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
+          <ChatHeader
+            chatName={chatData.chatName}
+            participantCount={chatData.participants.length}
+            diagnosticsCount={diagnosticsCount}
+            onSearchPress={() => {
+              setIsMediaLibraryOpen(false)
+              setIsBookmarkBrowserOpen(false)
+              setIsCalendarOpen(false)
+              setIsInsightsOpen(false)
+              setIsToolsMenuOpen(false)
+              setIsSearchOpen(true)
+            }}
+            onMorePress={() => setIsToolsMenuOpen(open => !open)}
+          />
 
-        <View className='flex-1'>
-          <ImageBackground
-            source={require('@/assets/images/wallpaper.jpeg')}
-            style={{ flex: 1 }}
-            resizeMode='cover'
-          >
-            {!isInitialLoading && (
-              <FlashList
-                ref={flashListRef}
-                data={items}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
-                getItemType={getItemType}
-                initialScrollIndex={initialScrollIndex}
-                initialScrollIndexParams={
-                  initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
-                }
-                contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
-                maintainVisibleContentPosition={
-                  initialScrollIndex === undefined
-                    ? MAINTAIN_BOTTOM_POSITION
-                    : MAINTAIN_RESTORED_POSITION
-                }
-                onScroll={handleScroll}
-                scrollEventThrottle={100}
-                onScrollBeginDrag={showVisibleDate}
-                onScrollEndDrag={hideVisibleDateSoon}
-                onMomentumScrollEnd={hideVisibleDateSoon}
-                onViewableItemsChanged={handleViewableItemsChanged}
-                onStartReached={handleStartReached}
-                onStartReachedThreshold={0.35}
-                onEndReached={handleEndReached}
-                onEndReachedThreshold={0.2}
-                onLoad={onLoad}
-                ListHeaderComponent={
-                  isLoadingOlder ? (
-                    <View className='items-center py-4'>
-                      <ActivityIndicator size='small' color='#00A884' />
-                    </View>
-                  ) : null
-                }
-                ListFooterComponent={
-                  isLoadingNewer ? (
-                    <View className='items-center py-4'>
-                      <ActivityIndicator size='small' color='#00A884' />
-                    </View>
-                  ) : null
-                }
-              />
-            )}
+          <View className='flex-1'>
+            <ImageBackground
+              source={require('@/assets/images/wallpaper.jpeg')}
+              style={{ flex: 1, backgroundColor: wallpaper.backgroundColor }}
+              imageStyle={{ opacity: wallpaper.imageOpacity }}
+              resizeMode='cover'
+            >
+              {wallpaper.overlayColor !== 'transparent' ? (
+                <View
+                  pointerEvents='none'
+                  className='absolute inset-0'
+                  style={{ backgroundColor: wallpaper.overlayColor }}
+                />
+              ) : null}
+              {!isInitialLoading && (
+                <FlashList
+                  ref={flashListRef}
+                  data={items}
+                  renderItem={renderItem}
+                  keyExtractor={keyExtractor}
+                  getItemType={getItemType}
+                  initialScrollIndex={initialScrollIndex}
+                  initialScrollIndexParams={
+                    initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
+                  }
+                  contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
+                  maintainVisibleContentPosition={
+                    initialScrollIndex === undefined
+                      ? MAINTAIN_BOTTOM_POSITION
+                      : MAINTAIN_RESTORED_POSITION
+                  }
+                  onScroll={handleScroll}
+                  scrollEventThrottle={100}
+                  onScrollBeginDrag={showVisibleDate}
+                  onScrollEndDrag={hideVisibleDateSoon}
+                  onMomentumScrollEnd={hideVisibleDateSoon}
+                  onViewableItemsChanged={handleViewableItemsChanged}
+                  onStartReached={handleStartReached}
+                  onStartReachedThreshold={0.35}
+                  onEndReached={handleEndReached}
+                  onEndReachedThreshold={0.2}
+                  onLoad={onLoad}
+                  ListHeaderComponent={
+                    isLoadingOlder ? (
+                      <View className='items-center py-4'>
+                        <ActivityIndicator size='small' color='#00A884' />
+                      </View>
+                    ) : null
+                  }
+                  ListFooterComponent={
+                    isLoadingNewer ? (
+                      <View className='items-center py-4'>
+                        <ActivityIndicator size='small' color='#00A884' />
+                      </View>
+                    ) : null
+                  }
+                />
+              )}
 
-            {isInitialLoading && (
-              <View className='absolute inset-0 items-center justify-center'>
-                <ActivityIndicator size='small' color='#00A884' />
+              {isInitialLoading && (
+                <View className='absolute inset-0 items-center justify-center'>
+                  <ActivityIndicator size='small' color='#00A884' />
+                </View>
+              )}
+
+              {showDateChip && visibleDate && (
+                <View
+                  pointerEvents='none'
+                  className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
+                  style={{ elevation: 3 }}
+                >
+                  <Text
+                    className='font-medium text-[#E9EDEF]'
+                    style={{ fontSize: 11.5 * appearance.textScale }}
+                  >
+                    {visibleDate}
+                  </Text>
+                </View>
+              )}
+
+              {showScrollButton && (
+                <Pressable
+                  accessibilityLabel='Scroll to newest message'
+                  accessibilityRole='button'
+                  className='bg-wa-header absolute right-3.5 flex size-11 items-center justify-center rounded-full'
+                  style={{
+                    bottom: 12,
+                    elevation: 4,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 3
+                  }}
+                  onPress={scrollToBottom}
+                >
+                  <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
+                </Pressable>
+              )}
+            </ImageBackground>
+
+            <ChatComposer />
+
+            {isSearchOpen && (
+              <View className='absolute inset-0'>
+                <ChatSearch
+                  chatId={chatData.chatId}
+                  onClose={() => setIsSearchOpen(false)}
+                  onSelect={handleSearchResult}
+                />
               </View>
             )}
 
-            {showDateChip && visibleDate && (
-              <View
-                pointerEvents='none'
-                className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
-                style={{ elevation: 3 }}
-              >
-                <Text className='text-[11.5px] font-medium text-[#E9EDEF]'>{visibleDate}</Text>
+            {isMediaLibraryOpen && (
+              <View className='absolute inset-0'>
+                <MediaLibrary
+                  chatId={chatData.chatId}
+                  onClose={() => setIsMediaLibraryOpen(false)}
+                  onJump={handleMediaJump}
+                />
               </View>
             )}
 
-            {showScrollButton && (
-              <Pressable
-                accessibilityLabel='Scroll to newest message'
-                accessibilityRole='button'
-                className='bg-wa-header absolute right-3.5 flex size-11 items-center justify-center rounded-full'
-                style={{
-                  bottom: 12,
-                  elevation: 4,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 3
+            {isBookmarkBrowserOpen && (
+              <View className='absolute inset-0'>
+                <BookmarkBrowser
+                  chatId={chatData.chatId}
+                  onClose={() => setIsBookmarkBrowserOpen(false)}
+                  onJump={handleBookmarkJump}
+                />
+              </View>
+            )}
+
+            {isCalendarOpen && (
+              <View className='absolute inset-0'>
+                <ChatCalendar
+                  chatId={chatData.chatId}
+                  onClose={() => setIsCalendarOpen(false)}
+                  onSelect={handleDateJump}
+                />
+              </View>
+            )}
+
+            {isInsightsOpen && (
+              <View className='absolute inset-0'>
+                <ChatInsights chatId={chatData.chatId} onClose={() => setIsInsightsOpen(false)} />
+              </View>
+            )}
+
+            {isToolsMenuOpen && (
+              <ChatToolsMenu
+                diagnosticsCount={diagnosticsCount}
+                hapticsEnabled={hapticsEnabled}
+                onToggleHaptics={() => {
+                  const next = !hapticsEnabled
+                  setHapticFeedbackEnabled(next)
+                  setHapticsEnabled(next)
+                  if (next) performHapticFeedback('selection')
                 }}
-                onPress={scrollToBottom}
-              >
-                <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
-              </Pressable>
+                onClose={() => setIsToolsMenuOpen(false)}
+                onCalendar={() => {
+                  setIsSearchOpen(false)
+                  setIsMediaLibraryOpen(false)
+                  setIsBookmarkBrowserOpen(false)
+                  setIsInsightsOpen(false)
+                  setIsCalendarOpen(true)
+                }}
+                onMedia={() => {
+                  setIsSearchOpen(false)
+                  setIsBookmarkBrowserOpen(false)
+                  setIsCalendarOpen(false)
+                  setIsInsightsOpen(false)
+                  setIsMediaLibraryOpen(true)
+                }}
+                onBookmarks={() => {
+                  setIsSearchOpen(false)
+                  setIsMediaLibraryOpen(false)
+                  setIsCalendarOpen(false)
+                  setIsInsightsOpen(false)
+                  setIsBookmarkBrowserOpen(true)
+                }}
+                onInsights={() => {
+                  setIsSearchOpen(false)
+                  setIsMediaLibraryOpen(false)
+                  setIsBookmarkBrowserOpen(false)
+                  setIsCalendarOpen(false)
+                  setIsInsightsOpen(true)
+                }}
+                onAppearance={() => {
+                  setIsSearchOpen(false)
+                  setIsMediaLibraryOpen(false)
+                  setIsBookmarkBrowserOpen(false)
+                  setIsCalendarOpen(false)
+                  setIsInsightsOpen(false)
+                  setIsAppearanceOpen(true)
+                }}
+                onDiagnostics={
+                  chatData.importDiagnostics
+                    ? () =>
+                        Alert.alert(
+                          'Import report',
+                          formatImportDiagnosticsReport(chatData.importDiagnostics!)
+                        )
+                    : undefined
+                }
+              />
             )}
-          </ImageBackground>
 
-          <ChatComposer />
-
-          {isSearchOpen && (
-            <View className='absolute inset-0'>
-              <ChatSearch
-                chatId={chatData.chatId}
-                onClose={() => setIsSearchOpen(false)}
-                onSelect={handleSearchResult}
+            {isAppearanceOpen && (
+              <ChatAppearance
+                preference={appearance}
+                onChange={updateAppearance}
+                onReset={resetAppearance}
+                onClose={() => setIsAppearanceOpen(false)}
               />
-            </View>
-          )}
-
-          {isMediaLibraryOpen && (
-            <View className='absolute inset-0'>
-              <MediaLibrary
-                chatId={chatData.chatId}
-                onClose={() => setIsMediaLibraryOpen(false)}
-                onJump={handleMediaJump}
-              />
-            </View>
-          )}
-
-          {isBookmarkBrowserOpen && (
-            <View className='absolute inset-0'>
-              <BookmarkBrowser
-                chatId={chatData.chatId}
-                onClose={() => setIsBookmarkBrowserOpen(false)}
-                onJump={handleBookmarkJump}
-              />
-            </View>
-          )}
-
-          {isCalendarOpen && (
-            <View className='absolute inset-0'>
-              <ChatCalendar
-                chatId={chatData.chatId}
-                onClose={() => setIsCalendarOpen(false)}
-                onSelect={handleDateJump}
-              />
-            </View>
-          )}
-
-          {isInsightsOpen && (
-            <View className='absolute inset-0'>
-              <ChatInsights chatId={chatData.chatId} onClose={() => setIsInsightsOpen(false)} />
-            </View>
-          )}
-
-          {isToolsMenuOpen && (
-            <ChatToolsMenu
-              diagnosticsCount={diagnosticsCount}
-              hapticsEnabled={hapticsEnabled}
-              onToggleHaptics={() => {
-                const next = !hapticsEnabled
-                setHapticFeedbackEnabled(next)
-                setHapticsEnabled(next)
-                if (next) performHapticFeedback('selection')
-              }}
-              onClose={() => setIsToolsMenuOpen(false)}
-              onCalendar={() => {
-                setIsSearchOpen(false)
-                setIsMediaLibraryOpen(false)
-                setIsBookmarkBrowserOpen(false)
-                setIsInsightsOpen(false)
-                setIsCalendarOpen(true)
-              }}
-              onMedia={() => {
-                setIsSearchOpen(false)
-                setIsBookmarkBrowserOpen(false)
-                setIsCalendarOpen(false)
-                setIsInsightsOpen(false)
-                setIsMediaLibraryOpen(true)
-              }}
-              onBookmarks={() => {
-                setIsSearchOpen(false)
-                setIsMediaLibraryOpen(false)
-                setIsCalendarOpen(false)
-                setIsInsightsOpen(false)
-                setIsBookmarkBrowserOpen(true)
-              }}
-              onInsights={() => {
-                setIsSearchOpen(false)
-                setIsMediaLibraryOpen(false)
-                setIsBookmarkBrowserOpen(false)
-                setIsCalendarOpen(false)
-                setIsInsightsOpen(true)
-              }}
-              onDiagnostics={
-                chatData.importDiagnostics
-                  ? () =>
-                      Alert.alert(
-                        'Import report',
-                        formatImportDiagnosticsReport(chatData.importDiagnostics!)
-                      )
-                  : undefined
-              }
-            />
-          )}
-        </View>
-        <MessageActionSheet
-          chatId={chatData.chatId}
-          selection={actionSelection}
-          onClose={() => setActionSelection(null)}
-        />
-      </SafeAreaView>
+            )}
+          </View>
+          <MessageActionSheet
+            chatId={chatData.chatId}
+            selection={actionSelection}
+            onClose={() => setActionSelection(null)}
+          />
+        </SafeAreaView>
+      </ChatAppearanceProvider>
     </AudioPlayerProvider>
   )
 }
