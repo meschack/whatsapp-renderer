@@ -15,7 +15,8 @@ export function parseChat(
   openTranscript: () => AsyncIterable<string>,
   mediaMap: MediaMap,
   chatId: string,
-  myName?: string
+  myName?: string,
+  signal?: AbortSignal
 ) {
-  return parseIncrementally({ chatId, openTranscript, mediaMap, myName })
+  return parseIncrementally({ chatId, openTranscript, mediaMap, myName, signal })
 }

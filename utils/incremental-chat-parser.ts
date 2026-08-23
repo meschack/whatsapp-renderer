@@ -1,8 +1,5 @@
 import type { MediaMap, Message } from '../models/types'
-import {
-  visitWhatsAppChatStream,
-  type WhatsAppChatMetadata
-} from './whatsapp-chat-parser'
+import { visitWhatsAppChatStream, type WhatsAppChatMetadata } from './whatsapp-chat-parser'
 
 export interface IncrementalChatParserDependencies {
   batchSize: number
@@ -15,6 +12,14 @@ export interface IncrementalChatParserRequest {
   openTranscript: () => AsyncIterable<string>
   mediaMap: MediaMap
   myName?: string
+  signal?: AbortSignal
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Import cancelled')
+  error.name = 'AbortError'
+  throw error
 }
 
 export function createIncrementalChatParser(dependencies: IncrementalChatParserDependencies) {
@@ -28,6 +33,7 @@ export function createIncrementalChatParser(dependencies: IncrementalChatParserD
     let batch: Message[] = []
 
     const flush = async () => {
+      throwIfAborted(request.signal)
       if (batch.length === 0) return
       const messages = batch
       batch = []
@@ -40,11 +46,13 @@ export function createIncrementalChatParser(dependencies: IncrementalChatParserD
       request.mediaMap,
       request.myName,
       async message => {
+        throwIfAborted(request.signal)
         batch.push(message)
         if (batch.length === dependencies.batchSize) await flush()
       }
     )
 
+    throwIfAborted(request.signal)
     await flush()
     return metadata
   }

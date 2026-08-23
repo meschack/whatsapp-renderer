@@ -102,6 +102,11 @@ describe('archive bootstrap', () => {
       ])
     )
     expect(
+      (await database.all<{ name: string }>('PRAGMA table_info(saved_chats)')).map(
+        column => column.name
+      )
+    ).toContain('archiveFingerprint')
+    expect(
       await database.first<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'chat_positions'"
       )

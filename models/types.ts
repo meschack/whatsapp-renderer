@@ -41,4 +41,5 @@ export interface SavedChat {
   lastMessageText: string | null
   lastMessageTime: string
   importedAt: string
+  archiveFingerprint?: string | null
 }

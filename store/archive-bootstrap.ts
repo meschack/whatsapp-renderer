@@ -35,6 +35,7 @@ interface SavedChatRow {
   lastMessageText: string | null
   lastMessageTime: string
   importedAt: string
+  archiveFingerprint: string | null
 }
 
 interface Migration {
@@ -42,7 +43,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 6
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 7
 
 const migrations: Migration[] = [
   {
@@ -180,6 +181,20 @@ const migrations: Migration[] = [
         );
         CREATE INDEX IF NOT EXISTS idx_message_bookmarks_chat
           ON message_bookmarks(chatId, createdAt DESC);
+      `)
+    }
+  },
+  {
+    version: 7,
+    async migrate(database) {
+      const columns = await database.all<{ name: string }>('PRAGMA table_info(saved_chats)')
+      if (!columns.some(column => column.name === 'archiveFingerprint')) {
+        await database.exec('ALTER TABLE saved_chats ADD COLUMN archiveFingerprint TEXT')
+      }
+      await database.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_chats_fingerprint
+          ON saved_chats(archiveFingerprint)
+          WHERE archiveFingerprint IS NOT NULL;
       `)
     }
   }
