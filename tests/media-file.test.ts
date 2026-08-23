@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   getAdjacentMediaSequence,
+  formatFileSize,
+  getDecodedFilename,
+  getDocumentPresentation,
   getMediaMimeType,
   getSafeMediaFilename
 } from '../utils/media-file'
@@ -52,5 +55,18 @@ describe('media viewer file presentation', () => {
     expect(getAdjacentMediaSequence(records, 7, 'older')).toBe(3)
     expect(getAdjacentMediaSequence(records, 9, 'newer')).toBeNull()
     expect(getAdjacentMediaSequence(records, 3, 'older')).toBeNull()
+  })
+
+  it('normalizes document names, supported types, and readable sizes', () => {
+    expect(getDecodedFilename('Quarterly%20Report.xlsx', 'Document')).toBe('Quarterly Report.xlsx')
+    expect(getDocumentPresentation('Quarterly Report.xlsx')).toEqual({
+      label: 'Excel',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    expect(getDocumentPresentation('payload.exe')).toBeNull()
+    expect(formatFileSize(950)).toBe('950 B')
+    expect(formatFileSize(2_560)).toBe('2.5 KB')
+    expect(formatFileSize(3 * 1_048_576)).toBe('3.0 MB')
+    expect(formatFileSize(null)).toBe('Unknown size')
   })
 })

@@ -3,10 +3,12 @@ import { Pressable, Text, View } from '@/src/tw'
 import { Image } from '@/src/tw/image'
 import { Ionicons } from '@expo/vector-icons'
 import { useVideoPlayer, VideoView } from 'expo-video'
-import { memo, useCallback } from 'react'
-import { Modal, useWindowDimensions } from 'react-native'
+import { memo, useCallback, useMemo } from 'react'
+import { Alert, Modal, useWindowDimensions } from 'react-native'
 import { AudioPlayer } from './audio-player'
 import { useRecyclingState } from '@shopify/flash-list'
+import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
+import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 
 interface MediaMessageProps {
   message: Message
@@ -16,6 +18,8 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
   const [imageModalVisible, setImageModalVisible] = useRecyclingState(false, [message.id])
 
   if (!message.mediaType) return null
+
+  if (message.mediaType === 'document') return <DocumentMessage message={message} />
 
   if (!message.mediaUri) {
     return (
@@ -69,9 +73,6 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
           showMeta={message.text === null || message.text.trim().length === 0}
         />
       )
-
-    case 'document':
-      return <DocumentMessage uri={message.mediaUri} />
 
     default:
       return null
@@ -164,17 +165,89 @@ const ChatImage = memo(function ChatImage({
   )
 })
 
-const DocumentMessage = memo(function DocumentMessage({ uri }: { uri: string }) {
+const DocumentMessage = memo(function DocumentMessage({ message }: { message: Message }) {
+  const [busyAction, setBusyAction] = useRecyclingState<'open' | 'share' | null>(null, [message.id])
+  const uriFilename = message.mediaUri?.split('/').pop()?.split(/[?#]/)[0] ?? null
+  const filename = getDecodedFilename(message.mediaFilename ?? uriFilename, 'Document')
+  const presentation = getDocumentPresentation(filename)
+  const available = message.mediaUri !== null
+  const target = useMemo(
+    () => ({
+      uri: message.mediaUri,
+      filename,
+      mimeType: presentation?.mimeType ?? 'application/octet-stream'
+    }),
+    [filename, message.mediaUri, presentation?.mimeType]
+  )
+
+  const runAction = useCallback(
+    async (action: 'open' | 'share') => {
+      if (busyAction) return
+      if (!available) {
+        Alert.alert('File unavailable', 'The original document is missing from this archive.')
+        return
+      }
+      if (!presentation) {
+        Alert.alert('Unsupported document', 'This file type has no safe platform handler.')
+        return
+      }
+
+      setBusyAction(action)
+      try {
+        if (action === 'open') await openLocalFile(target)
+        else await shareLocalFile(target)
+      } catch (error) {
+        Alert.alert(
+          action === 'open' ? 'Could not open document' : 'Could not share document',
+          error instanceof MediaFileActionError ? error.message : 'An unexpected error occurred.'
+        )
+      } finally {
+        setBusyAction(null)
+      }
+    },
+    [available, busyAction, presentation, setBusyAction, target]
+  )
+
   return (
-    <View className='flex-row items-center gap-3 px-1 py-2'>
-      <View className='bg-wa-accent/20 size-10 items-center justify-center rounded-lg'>
-        <Ionicons name='document' size={22} color='#00A884' />
-      </View>
-      <View className='flex-1'>
-        <Text className='text-wa-text-primary text-sm' numberOfLines={1}>
-          {uri.split('/').pop() ?? 'Document'}
-        </Text>
-        <Text className='text-wa-text-secondary text-[11px]'>Document</Text>
+    <View className='max-w-[280px] min-w-[245px] px-1 py-1'>
+      <Pressable
+        accessibilityLabel={`Open ${filename}`}
+        className='flex-row items-center rounded-lg bg-black/10 px-2.5 py-2.5 active:bg-black/20'
+        onPress={() => void runAction('open')}
+      >
+        <View className='bg-wa-accent/20 size-11 items-center justify-center rounded-lg'>
+          <Ionicons
+            name={available ? 'document-text' : 'cloud-offline-outline'}
+            size={23}
+            color={available ? '#00A884' : '#8696A0'}
+          />
+        </View>
+        <View className='ml-3 min-w-0 flex-1 pr-1'>
+          <Text className='text-wa-text-primary text-[13px] font-medium' numberOfLines={2}>
+            {filename}
+          </Text>
+          <Text className='text-wa-text-secondary mt-1 text-[10.5px]' numberOfLines={1}>
+            {presentation?.label ?? 'Unsupported'} · {formatFileSize(message.mediaSize)}
+            {!available ? ' · Missing' : ''}
+          </Text>
+        </View>
+        <Ionicons name='open-outline' size={18} color={available ? '#AEBAC1' : '#667781'} />
+      </Pressable>
+
+      <View className='mt-1 flex-row justify-end'>
+        <Pressable
+          accessibilityLabel={`Share ${filename}`}
+          className='min-h-10 flex-row items-center rounded-full px-3 active:bg-black/15'
+          onPress={event => {
+            event.stopPropagation()
+            void runAction('share')
+          }}
+        >
+          <Ionicons name='share-outline' size={17} color='#AEBAC1' />
+          <Text className='text-wa-text-secondary ml-1.5 text-[11px]'>
+            {busyAction === 'share' ? 'Opening…' : 'Share'}
+          </Text>
+        </Pressable>
       </View>
     </View>
   )
