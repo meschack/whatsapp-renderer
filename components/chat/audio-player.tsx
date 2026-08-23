@@ -26,6 +26,7 @@ import Animated, {
 } from 'react-native-reanimated'
 import { useAudioPlayerControls } from './audio-player-provider'
 import { MessageMeta } from './message-meta'
+import { GeneratedAvatar } from '@/components/shared/generated-avatar'
 
 interface AudioPlayerProps {
   message: Message
@@ -107,12 +108,15 @@ export const AudioPlayer = memo(function AudioPlayer({
   }))
 
   const avatar = (
-    <View className='bg-wa-header/90 relative size-10 items-center justify-center rounded-full'>
-      <Ionicons name='person' size={20} color='#B7C4CF' />
-      <View className='bg-wa-bg absolute -bottom-0.5 -left-0.5 size-4.5 items-center justify-center rounded-full'>
-        <Ionicons name='mic' size={11} color='#53BDEB' />
-      </View>
-    </View>
+    <GeneratedAvatar
+      name={message.sender ?? 'Unknown'}
+      size={40}
+      badge={
+        <View className='bg-wa-bg absolute -bottom-0.5 -left-0.5 size-4.5 items-center justify-center rounded-full'>
+          <Ionicons name='mic' size={11} color='#53BDEB' />
+        </View>
+      }
+    />
   )
 
   const trailingControl = showPlaybackRate ? (

@@ -13,6 +13,8 @@ const MAX_CHARS = 500
 interface ChatBubbleProps {
   message: Message
   showSender: boolean
+  showSenderName?: boolean
+  senderColor?: string
   highlighted?: boolean
   onLongPress?: () => void
 }
@@ -20,6 +22,8 @@ interface ChatBubbleProps {
 export const ChatBubble = memo(function ChatBubble({
   message,
   showSender,
+  showSenderName = false,
+  senderColor,
   highlighted = false,
   onLongPress
 }: ChatBubbleProps) {
@@ -78,6 +82,16 @@ export const ChatBubble = memo(function ChatBubble({
             : undefined
         ]}
       >
+        {showSenderName && message.sender ? (
+          <Text
+            className='mb-0.5 text-[12.5px] font-semibold'
+            numberOfLines={1}
+            style={{ color: senderColor }}
+          >
+            {message.sender}
+          </Text>
+        ) : null}
+
         {/* Media content */}
         {hasMedia && <MediaMessage message={message} />}
 

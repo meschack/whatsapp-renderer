@@ -1,6 +1,6 @@
-import { Ionicons } from '@expo/vector-icons'
 import { View, Text, Pressable } from '@/src/tw'
 import type { SavedChat } from '@/models/types'
+import { GeneratedAvatar } from '@/components/shared/generated-avatar'
 
 interface ChatListItemProps {
   chat: SavedChat
@@ -31,14 +31,14 @@ const formatRelativeTime = (isoString: string): string => {
 }
 
 export const ChatListItem = ({ chat, onPress, onLongPress }: ChatListItemProps) => {
-  const isGroup = chat.participants.length > 2
-
   return (
-    <Pressable className='flex-row items-center px-4 py-3 gap-3' onPress={onPress} onLongPress={onLongPress}>
-      {/* Avatar */}
-      <View className='w-[52px] h-[52px] rounded-full bg-wa-header justify-center items-center'>
-        <Ionicons name={isGroup ? 'people' : 'person'} size={26} color='#8696A0' />
-      </View>
+    <Pressable
+      accessibilityLabel={`${chat.chatName}, ${chat.lastMessageText ?? 'Media message'}`}
+      className='flex-row items-center gap-3 px-4 py-3'
+      onPress={onPress}
+      onLongPress={onLongPress}
+    >
+      <GeneratedAvatar name={chat.chatName} size={52} />
 
       {/* Name + last message */}
       <View className='flex-1 gap-0.5'>
@@ -51,7 +51,7 @@ export const ChatListItem = ({ chat, onPress, onLongPress }: ChatListItemProps) 
       </View>
 
       {/* Timestamp */}
-      <Text className='text-wa-text-secondary text-xs self-start mt-1'>
+      <Text className='text-wa-text-secondary mt-1 self-start text-xs'>
         {formatRelativeTime(chat.lastMessageTime)}
       </Text>
     </Pressable>

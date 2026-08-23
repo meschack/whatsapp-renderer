@@ -3,6 +3,9 @@ import { saveChatMetadata } from '@/store/chat-database'
 import { updateIsMine, getLastMessage } from '@/store/message-database'
 import { View, Text, Pressable } from '@/src/tw'
 import { Ionicons } from '@expo/vector-icons'
+import { GeneratedAvatar } from '@/components/shared/generated-avatar'
+import { buildParticipantColorMap } from '@/utils/participant-identity'
+import { useMemo } from 'react'
 import { useRouter } from 'expo-router'
 import { FlatList } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -10,6 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 export default function SelectSenderScreen() {
   const router = useRouter()
   const { chatData, setChatData, refreshSavedChats } = useChatStore()
+  const participantColors = useMemo(
+    () => buildParticipantColorMap(chatData?.participants ?? []),
+    [chatData?.participants]
+  )
 
   if (!chatData) {
     return (
@@ -86,9 +93,7 @@ export default function SelectSenderScreen() {
             className='flex-row items-center gap-3 px-3 py-4'
             onPress={() => handleSelect(item)}
           >
-            <View className='bg-wa-header h-11 w-11 items-center justify-center rounded-full'>
-              <Ionicons name='person' size={24} color='#8696A0' />
-            </View>
+            <GeneratedAvatar name={item} color={participantColors[item]} size={44} />
             <Text className='text-wa-text-primary flex-1 text-base font-medium'>{item}</Text>
             <Ionicons name='chevron-forward' size={20} color='#8696A0' />
           </Pressable>

@@ -24,6 +24,7 @@ import { formatDateLabel } from '@/utils/chat-timeline'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
 import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
+import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
 import type { AttachmentRecord } from '@/utils/media-library'
 import type { BookmarkRecord } from '@/utils/bookmarks'
 import type { ChatDateTarget } from '@/utils/chat-calendar'
@@ -79,6 +80,10 @@ export default function ChatScreen() {
   const diagnosticsCount = chatData?.importDiagnostics
     ? getImportDiagnosticTotal(chatData.importDiagnostics)
     : 0
+  const participantColors = useMemo(
+    () => buildParticipantColorMap(chatData?.participants ?? []),
+    [chatData?.participants]
+  )
 
   const {
     items,
@@ -173,12 +178,19 @@ export default function ChatScreen() {
         <ChatBubble
           message={item.message}
           showSender={item.showSender}
+          showSenderName={shouldShowGroupSenderName({
+            participantCount: chatData?.participants.length ?? 0,
+            isMine: item.message.isMine,
+            isSenderBoundary: item.showSender,
+            sender: item.message.sender
+          })}
+          senderColor={item.message.sender ? participantColors[item.message.sender] : undefined}
           highlighted={item.id === highlightedMessageId}
           onLongPress={() => setActionSelection({ message: item.message, sequence: item.sequence })}
         />
       )
     },
-    [highlightedMessageId]
+    [chatData?.participants.length, highlightedMessageId, participantColors]
   )
 
   const keyExtractor = useCallback((item: ListItem) => item.id, [])
