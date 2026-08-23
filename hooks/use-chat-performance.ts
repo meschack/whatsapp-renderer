@@ -1,9 +1,9 @@
-import {
-  useBenchmark,
-  type BenchmarkResult,
-  type FlashListRef
-} from '@shopify/flash-list'
-import { useCallback, useRef } from 'react'
+import { useBenchmark, type BenchmarkResult, type FlashListRef } from '@shopify/flash-list'
+import { useCallback, useEffect, useRef } from 'react'
+
+import type { TimelineDeviceProfile } from '@/hooks/use-timeline-budget'
+import { summarizeFrameDurations } from '@/utils/chat-performance'
+import type { TimelineBudget } from '@/utils/timeline-budget'
 
 interface PageLoadEvent {
   direction: 'initial' | 'older' | 'newer'
@@ -15,13 +15,24 @@ interface ChatPerformanceMetrics {
   pageLoads: PageLoadEvent[]
 }
 
+interface ChatPerformanceContext {
+  budget: TimelineBudget
+  device: TimelineDeviceProfile
+}
+
 export const CHAT_BENCHMARK_ENABLED = process.env.EXPO_PUBLIC_CHAT_BENCHMARK === '1'
 
-export function useChatPerformance(listRef: React.RefObject<FlashListRef<any> | null>) {
+export function useChatPerformance(
+  listRef: React.RefObject<FlashListRef<any> | null>,
+  context: ChatPerformanceContext
+) {
   const metricsRef = useRef<ChatPerformanceMetrics>({
     initialRenderMs: null,
     pageLoads: []
   })
+  const frameDurationsRef = useRef<number[]>([])
+  const lastFrameAtRef = useRef<number | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
 
   const onPageLoad = useCallback((event: PageLoadEvent) => {
     const pageLoads = metricsRef.current.pageLoads
@@ -33,25 +44,77 @@ export function useChatPerformance(listRef: React.RefObject<FlashListRef<any> | 
     metricsRef.current.initialRenderMs = elapsedTimeInMs
   }, [])
 
-  const handleBenchmark = useCallback((result: BenchmarkResult) => {
-    if (!CHAT_BENCHMARK_ENABLED || result.interrupted) return
-
-    console.info(
-      '[CHAT_PERF]',
-      JSON.stringify({
-        jsFps: result.js,
-        suggestions: result.suggestions,
-        ...metricsRef.current
-      })
-    )
+  const stopFrameSampling = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+    lastFrameAtRef.current = null
   }, [])
 
-  // FlashList's runtime accepts an initially-null ref, though 2.3.0's public type omits null.
-  const benchmark = useBenchmark(listRef as React.RefObject<FlashListRef<any>>, handleBenchmark, {
-    startManually: true,
-    repeatCount: 3,
-    speedMultiplier: 1.5
-  })
+  const handleBenchmark = useCallback(
+    (result: BenchmarkResult) => {
+      stopFrameSampling()
+      if (!CHAT_BENCHMARK_ENABLED || result.interrupted) return
 
-  return { onPageLoad, onLoad, benchmarkEnabled: CHAT_BENCHMARK_ENABLED, ...benchmark }
+      console.info(
+        '[CHAT_PERF]',
+        JSON.stringify({
+          device: context.device,
+          timelineBudget: context.budget,
+          jsFps: result.js,
+          jsJank: summarizeFrameDurations(frameDurationsRef.current),
+          suggestions: result.suggestions,
+          ...metricsRef.current
+        })
+      )
+    },
+    [context.budget, context.device, stopFrameSampling]
+  )
+
+  // FlashList's runtime accepts an initially-null ref, though 2.3.0's public type omits null.
+  const { startBenchmark: runBenchmark, isBenchmarkRunning } = useBenchmark(
+    listRef as React.RefObject<FlashListRef<any>>,
+    handleBenchmark,
+    {
+      startManually: true,
+      repeatCount: 3,
+      speedMultiplier: 1.5
+    }
+  )
+
+  const startBenchmark = useCallback(() => {
+    frameDurationsRef.current = []
+    lastFrameAtRef.current = null
+
+    const sampleFrame = (now: number) => {
+      const previous = lastFrameAtRef.current
+      if (previous !== null) frameDurationsRef.current.push(now - previous)
+      lastFrameAtRef.current = now
+      animationFrameRef.current = requestAnimationFrame(sampleFrame)
+    }
+
+    animationFrameRef.current = requestAnimationFrame(sampleFrame)
+    try {
+      runBenchmark()
+    } catch (error) {
+      stopFrameSampling()
+      throw error
+    }
+  }, [runBenchmark, stopFrameSampling])
+
+  useEffect(
+    () => () => {
+      stopFrameSampling()
+    },
+    [stopFrameSampling]
+  )
+
+  return {
+    isBenchmarkRunning,
+    startBenchmark,
+    onPageLoad,
+    onLoad,
+    benchmarkEnabled: CHAT_BENCHMARK_ENABLED
+  }
 }

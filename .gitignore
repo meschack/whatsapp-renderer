@@ -43,3 +43,6 @@ app-example
 /android
 
 expo-*.md
+
+# Local physical-device benchmark artifacts
+benchmark-results/

@@ -6,6 +6,7 @@ import { DateSeparator } from '@/components/chat/date-separator'
 import { SystemMessage } from '@/components/chat/system-message'
 import { useChatPerformance } from '@/hooks/use-chat-performance'
 import { useMessagePages, type ListItem } from '@/hooks/use-message-pages'
+import { useTimelineBudget } from '@/hooks/use-timeline-budget'
 import { Pressable, Text, View } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
 import { formatDateLabel } from '@/utils/chat-timeline'
@@ -37,7 +38,11 @@ export default function ChatScreen() {
   const lastScrollState = useRef(false)
   const hideDateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const benchmarkStarted = useRef(false)
-  const { onPageLoad, onLoad, benchmarkEnabled, startBenchmark } = useChatPerformance(flashListRef)
+  const { budget, profile } = useTimelineBudget()
+  const { onPageLoad, onLoad, benchmarkEnabled, startBenchmark } = useChatPerformance(
+    flashListRef,
+    { budget, device: profile }
+  )
 
   const {
     items,
@@ -48,7 +53,11 @@ export default function ChatScreen() {
     isInitialLoading,
     isLoadingOlder,
     isLoadingNewer
-  } = useMessagePages(chatData?.chatId ?? '', { onPageLoad })
+  } = useMessagePages(chatData?.chatId ?? '', {
+    pageSize: budget.pageSize,
+    maxMessages: budget.maxMessages,
+    onPageLoad
+  })
 
   useEffect(() => {
     if (!benchmarkEnabled || benchmarkStarted.current || items.length === 0) return
