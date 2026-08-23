@@ -29,6 +29,7 @@ import {
 } from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
 import type { MediaMap, SavedChat } from '@/models/types'
+import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
 
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
@@ -118,9 +119,22 @@ export default function HomeScreen() {
         myName: chat.myName,
         extractDirUri: chat.extractDirUri,
         messageCount: chat.messageCount,
-        importedAt: chat.importedAt
+        importedAt: chat.importedAt,
+        archiveFingerprint: chat.archiveFingerprint,
+        importDiagnostics: chat.importDiagnostics
       })
       refreshSavedChats()
+
+      const diagnosticCount = chat.importDiagnostics
+        ? getImportDiagnosticTotal(chat.importDiagnostics)
+        : 0
+      if (outcome !== 'opened-existing' && diagnosticCount > 0) {
+        Alert.alert(
+          'Import completed with notices',
+          `${diagnosticCount} recoverable issue${diagnosticCount === 1 ? '' : 's'} found. ` +
+            'Open the chat and tap the yellow warning icon to view the report.'
+        )
+      }
 
       setStatusText('')
       setIsLoading(false)
@@ -202,7 +216,9 @@ export default function HomeScreen() {
           myName: chat.myName,
           extractDirUri: chat.extractDirUri,
           messageCount,
-          importedAt: chat.importedAt
+          importedAt: chat.importedAt,
+          archiveFingerprint: chat.archiveFingerprint,
+          importDiagnostics: chat.importDiagnostics
         })
 
         setStatusText('')

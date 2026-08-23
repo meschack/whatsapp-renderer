@@ -70,7 +70,14 @@ describe('incremental chat parser', () => {
       myName: 'Alice'
     })
 
-    expect(result).toEqual({ participants: ['Alice', 'Bob'], messageCount: 4 })
+    expect(result).toMatchObject({ participants: ['Alice', 'Bob'], messageCount: 4 })
+    expect(result.diagnostics.counts).toEqual({
+      'missing-files': 0,
+      'unsupported-formats': 0,
+      'ambiguous-dates': 0,
+      'malformed-records': 0,
+      'skipped-content': 0
+    })
     expect(written[0]).toMatchObject({ sender: null, isSystem: true })
     expect(written[1]).toMatchObject({
       text: 'Première ligne\nDeuxième ligne',
@@ -120,7 +127,7 @@ describe('incremental chat parser', () => {
       mediaMap: new Map()
     })
 
-    expect(result).toEqual({ participants: ['Alice', 'Bob'], messageCount })
+    expect(result).toMatchObject({ participants: ['Alice', 'Bob'], messageCount })
     expect(transcriptOpenCount).toBe(2)
     expect(writtenCount).toBe(messageCount)
     expect(Math.max(...batchSizes)).toBe(128)

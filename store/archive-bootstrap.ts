@@ -1,4 +1,5 @@
 import type { SavedChat } from '../models/types'
+import { parseImportDiagnostics } from '../utils/import-diagnostics'
 import { stripEditedMarker } from '../utils/message-text'
 
 export type ArchiveBindValue = string | number | null
@@ -36,6 +37,7 @@ interface SavedChatRow {
   lastMessageTime: string
   importedAt: string
   archiveFingerprint: string | null
+  importDiagnostics: string | null
 }
 
 interface Migration {
@@ -43,7 +45,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 7
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 8
 
 const migrations: Migration[] = [
   {
@@ -197,6 +199,15 @@ const migrations: Migration[] = [
           WHERE archiveFingerprint IS NOT NULL;
       `)
     }
+  },
+  {
+    version: 8,
+    async migrate(database) {
+      const columns = await database.all<{ name: string }>('PRAGMA table_info(saved_chats)')
+      if (!columns.some(column => column.name === 'importDiagnostics')) {
+        await database.exec('ALTER TABLE saved_chats ADD COLUMN importDiagnostics TEXT')
+      }
+    }
   }
 ]
 
@@ -262,6 +273,7 @@ async function loadSavedChats(database: ArchiveDatabase): Promise<SavedChat[]> {
 
   return rows.map(row => ({
     ...row,
-    participants: JSON.parse(row.participants) as string[]
+    participants: JSON.parse(row.participants) as string[],
+    importDiagnostics: parseImportDiagnostics(row.importDiagnostics)
   }))
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseWhatsAppChat } from '../utils/whatsapp-chat-parser'
+import { getImportDiagnosticTotal } from '../utils/import-diagnostics'
+import { formatImportDiagnosticsReport } from '../utils/import-diagnostics-report'
 import type { MediaAttachment } from '../models/types'
 
 function image(filename: string, uri: string): MediaAttachment {
@@ -92,5 +94,38 @@ describe('parseWhatsAppChat', () => {
 
     expect(result.messages).toHaveLength(1)
     expect(result.messages[0]).toMatchObject({ mediaUri: 'file:///chat/photo.jpg', text: null })
+  })
+
+  it('keeps recoverable records and reports each import diagnostic category exactly', () => {
+    const content = [
+      'This line is not a WhatsApp record',
+      '[02/03/2026, 10:00] Alice: <Media omitted>',
+      '[02/03/2026, 10:01] Bob: archive.rar (file attached)',
+      '[02/03/2026, 10:02] Alice: photo.jpg (file attached)'
+    ].join('\n')
+
+    const result = parseWhatsAppChat(content, new Map(), 'Alice')
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toMatchObject({
+      sender: 'Bob',
+      mediaType: 'document',
+      mediaFilename: 'archive.rar',
+      mediaUri: null
+    })
+    expect(result.diagnostics.counts).toEqual({
+      'missing-files': 2,
+      'unsupported-formats': 1,
+      'ambiguous-dates': 3,
+      'malformed-records': 1,
+      'skipped-content': 2
+    })
+    expect(getImportDiagnosticTotal(result.diagnostics)).toBe(9)
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('9 import notices')
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Missing files: 2')
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Unsupported formats: 1')
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Ambiguous dates: 3')
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Malformed records: 1')
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Skipped content: 2')
   })
 })

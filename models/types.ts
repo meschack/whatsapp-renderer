@@ -42,4 +42,17 @@ export interface SavedChat {
   lastMessageTime: string
   importedAt: string
   archiveFingerprint?: string | null
+  importDiagnostics?: ImportDiagnostics
+}
+
+export type ImportDiagnosticCategory =
+  | 'missing-files'
+  | 'unsupported-formats'
+  | 'ambiguous-dates'
+  | 'malformed-records'
+  | 'skipped-content'
+
+export interface ImportDiagnostics {
+  counts: Record<ImportDiagnosticCategory, number>
+  samples: Record<ImportDiagnosticCategory, string[]>
 }

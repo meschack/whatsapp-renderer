@@ -1,4 +1,4 @@
-import type { MediaMap, SavedChat } from '@/models/types'
+import type { ImportDiagnostics, MediaMap, SavedChat } from '@/models/types'
 import type { MediaCandidate, MediaIndexProgress } from '@/utils/media-indexer'
 
 type Awaitable<T> = T | Promise<T>
@@ -64,7 +64,11 @@ export interface ChatImportDependencies {
     openTranscript: () => AsyncIterable<string>
     mediaMap: MediaMap
     signal?: AbortSignal
-  }) => Awaitable<{ participants: string[]; messageCount: number }>
+  }) => Awaitable<{
+    participants: string[]
+    messageCount: number
+    diagnostics?: ImportDiagnostics
+  }>
   getLastMessage: (chatId: string) => Awaitable<{ text: string | null; timestamp: number } | null>
   saveChat: (chat: SavedChat) => Awaitable<void>
   replaceChat: (existingChatId: string, replacement: SavedChat) => Awaitable<void>
@@ -190,7 +194,8 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
         lastMessageText: lastMessage?.text ?? null,
         lastMessageTime: lastMessage ? new Date(lastMessage.timestamp).toISOString() : importedAt,
         importedAt,
-        archiveFingerprint: fingerprint
+        archiveFingerprint: fingerprint,
+        importDiagnostics: parsed.diagnostics
       }
       if (duplicate) {
         await dependencies.replaceChat(duplicate.id, chat)

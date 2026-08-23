@@ -18,6 +18,8 @@ import { Pressable, Text, View } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
 import { saveChatPosition, type MessageSearchResult } from '@/store/message-database'
 import { formatDateLabel } from '@/utils/chat-timeline'
+import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
+import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import type { AttachmentRecord } from '@/utils/media-library'
 import type { BookmarkRecord } from '@/utils/bookmarks'
@@ -26,6 +28,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   ImageBackground,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -66,6 +69,9 @@ export default function ChatScreen() {
     flashListRef,
     { budget, device: profile }
   )
+  const diagnosticsCount = chatData?.importDiagnostics
+    ? getImportDiagnosticTotal(chatData.importDiagnostics)
+    : 0
 
   const {
     items,
@@ -273,6 +279,16 @@ export default function ChatScreen() {
         <ChatHeader
           chatName={chatData.chatName}
           participantCount={chatData.participants.length}
+          diagnosticsCount={diagnosticsCount}
+          onDiagnosticsPress={
+            chatData.importDiagnostics
+              ? () =>
+                  Alert.alert(
+                    'Import report',
+                    formatImportDiagnosticsReport(chatData.importDiagnostics!)
+                  )
+              : undefined
+          }
           onSearchPress={() => {
             setIsMediaLibraryOpen(false)
             setIsBookmarkBrowserOpen(false)

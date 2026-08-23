@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { SavedChat } from '@/models/types'
+import type { ImportDiagnostics, SavedChat } from '@/models/types'
 
 export interface ChatData {
   chatId: string
@@ -9,6 +9,8 @@ export interface ChatData {
   extractDirUri: string
   messageCount: number
   importedAt: string
+  archiveFingerprint?: string | null
+  importDiagnostics?: ImportDiagnostics
 }
 
 export interface ChatStore {
