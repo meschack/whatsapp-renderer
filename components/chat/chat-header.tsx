@@ -11,6 +11,7 @@ interface ChatHeaderProps {
   onBookmarksPress?: () => void
   diagnosticsCount?: number
   onDiagnosticsPress?: () => void
+  onCalendarPress?: () => void
 }
 
 export function ChatHeader({
@@ -20,7 +21,8 @@ export function ChatHeader({
   onMediaPress,
   onBookmarksPress,
   diagnosticsCount = 0,
-  onDiagnosticsPress
+  onDiagnosticsPress,
+  onCalendarPress
 }: ChatHeaderProps) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -60,6 +62,15 @@ export function ChatHeader({
                   {diagnosticsCount > 99 ? '99+' : diagnosticsCount}
                 </Text>
               </View>
+            </Pressable>
+          )}
+          {onCalendarPress && (
+            <Pressable
+              accessibilityLabel='Jump to date'
+              className='size-9 items-center justify-center'
+              onPress={onCalendarPress}
+            >
+              <Ionicons name='calendar-outline' size={20} color='#E9EDEF' />
             </Pressable>
           )}
           {onBookmarksPress && (

@@ -4,6 +4,7 @@ import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/
 import { extractFirstUrl } from '../utils/message-links'
 import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../utils/media-library'
 import type { BookmarkCursor, BookmarkPage, BookmarkRecord } from '../utils/bookmarks'
+import { getLocalDayBounds, type ChatDateTarget, type ChatDay } from '../utils/chat-calendar'
 import { getArchiveDatabase } from './archive-database'
 
 /** Insert one bounded import batch without monopolizing the JavaScript thread. */
@@ -105,6 +106,44 @@ export interface MessageSearchPage {
   results: MessageSearchResult[]
   hasMore: boolean
   nextCursor: number | null
+}
+
+export async function getChatDays(chatId: string): Promise<ChatDay[]> {
+  if (!chatId) return []
+  const db = getArchiveDatabase()
+  const rows = await db.getAllAsync<{ dayKey: string; messageCount: number }>(
+    `SELECT strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch', 'localtime') AS dayKey,
+            COUNT(*) AS messageCount
+     FROM messages
+     WHERE chatId = ?
+     GROUP BY dayKey
+     ORDER BY dayKey ASC`,
+    chatId
+  )
+
+  return rows.filter(row => Boolean(row.dayKey))
+}
+
+export async function findFirstMessageOnLocalDay(
+  chatId: string,
+  dayKey: string
+): Promise<ChatDateTarget | null> {
+  const bounds = getLocalDayBounds(dayKey)
+  if (!chatId || !bounds) return null
+
+  const db = getArchiveDatabase()
+  const row = await db.getFirstAsync<{ id: number }>(
+    `SELECT id
+     FROM messages
+     WHERE chatId = ? AND timestamp >= ? AND timestamp < ?
+     ORDER BY timestamp ASC, id ASC
+     LIMIT 1`,
+    chatId,
+    bounds.start,
+    bounds.end
+  )
+
+  return row ? { dayKey, sequence: row.id, messageId: `msg-${row.id}` } : null
 }
 
 interface AttachmentRow {
