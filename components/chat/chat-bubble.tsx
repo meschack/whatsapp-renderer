@@ -1,5 +1,5 @@
 import type { Message } from '@/models/types'
-import { Text, View } from '@/src/tw'
+import { Pressable, Text, View } from '@/src/tw'
 import { cn } from '@/utils/css'
 import { memo, useCallback, useMemo } from 'react'
 import { LinkPreview } from './link-preview'
@@ -14,12 +14,14 @@ interface ChatBubbleProps {
   message: Message
   showSender: boolean
   highlighted?: boolean
+  onLongPress?: () => void
 }
 
 export const ChatBubble = memo(function ChatBubble({
   message,
   showSender,
-  highlighted = false
+  highlighted = false,
+  onLongPress
 }: ChatBubbleProps) {
   const isMine = message.isMine
   const hasMedia = message.mediaType !== null
@@ -46,9 +48,11 @@ export const ChatBubble = memo(function ChatBubble({
   )
 
   return (
-    <View
+    <Pressable
       className={`px-2 ${isMine ? 'items-end' : 'items-start'}`}
       style={{ marginTop: showSender ? 6 : 1 }}
+      delayLongPress={500}
+      onLongPress={onLongPress}
     >
       <View
         className={cn(
@@ -110,6 +114,6 @@ export const ChatBubble = memo(function ChatBubble({
           </View>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   )
 })

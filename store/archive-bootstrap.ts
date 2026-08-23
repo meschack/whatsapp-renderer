@@ -42,7 +42,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 5
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 6
 
 const migrations: Migration[] = [
   {
@@ -167,6 +167,21 @@ const migrations: Migration[] = [
         INSERT INTO messages_fts(messages_fts) VALUES ('rebuild');
       `)
     }
+  },
+  {
+    version: 6,
+    async migrate(database) {
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS message_bookmarks (
+          messageId INTEGER PRIMARY KEY,
+          chatId TEXT NOT NULL,
+          createdAt INTEGER NOT NULL,
+          FOREIGN KEY(messageId) REFERENCES messages(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_message_bookmarks_chat
+          ON message_bookmarks(chatId, createdAt DESC);
+      `)
+    }
   }
 ]
 
@@ -197,7 +212,9 @@ async function performBootstrap(
 
   try {
     database = await openDatabase()
-    await database.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
+    await database.exec(
+      'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;'
+    )
     await migrateArchive(database)
     const savedChats = await loadSavedChats(database)
     onReady?.(database)

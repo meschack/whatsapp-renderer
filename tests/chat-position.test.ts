@@ -11,7 +11,9 @@ import {
   getInitialMessagePage,
   getNewerAttachmentPage,
   getOlderAttachmentPage,
+  isMessageBookmarked,
   saveChatPosition,
+  setMessageBookmarked,
   searchMessages
 } from '../store/message-database'
 import { mergeAttachmentWindow } from '../utils/media-library'
@@ -59,6 +61,11 @@ function createDatabase(): DatabaseSync {
       chatId TEXT PRIMARY KEY,
       messageSequence INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
+    );
+    CREATE TABLE message_bookmarks (
+      messageId INTEGER PRIMARY KEY,
+      chatId TEXT NOT NULL,
+      createdAt INTEGER NOT NULL
     );
     CREATE VIRTUAL TABLE messages_fts USING fts5(
       text,
@@ -144,6 +151,17 @@ describe('chat position restoration', () => {
 
     expect(page.records.map(record => record.sequence)).toEqual([2, 3, 4, 5, 6])
     expect(page.restoredSequence).toBe(4)
+  })
+
+  it('adds and removes bookmarks only for messages in the requested chat', async () => {
+    await setMessageBookmarked('chat-1', 4, true)
+    await setMessageBookmarked('wrong-chat', 5, true)
+
+    expect(await isMessageBookmarked(4)).toBe(true)
+    expect(await isMessageBookmarked(5)).toBe(false)
+
+    await setMessageBookmarked('chat-1', 4, false)
+    expect(await isMessageBookmarked(4)).toBe(false)
   })
 })
 

@@ -4,6 +4,10 @@ import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
 import { ChatSearch } from '@/components/chat/chat-search'
 import { MediaLibrary } from '@/components/chat/media-library'
+import {
+  MessageActionSheet,
+  type MessageActionSelection
+} from '@/components/chat/message-action-sheet'
 import { DateSeparator } from '@/components/chat/date-separator'
 import { SystemMessage } from '@/components/chat/system-message'
 import { useChatPerformance } from '@/hooks/use-chat-performance'
@@ -49,6 +53,7 @@ export default function ChatScreen() {
   const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false)
   const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
+  const [actionSelection, setActionSelection] = useState<MessageActionSelection | null>(null)
   const lastScrollState = useRef(false)
   const hideDateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -131,12 +136,20 @@ export default function ChatScreen() {
       }
 
       if (item.message.isSystem) {
-        return item.id === highlightedMessageId ? (
-          <View style={{ backgroundColor: 'rgba(0, 168, 132, 0.22)' }}>
+        return (
+          <Pressable
+            delayLongPress={500}
+            onLongPress={() =>
+              setActionSelection({ message: item.message, sequence: item.sequence })
+            }
+            style={
+              item.id === highlightedMessageId
+                ? { backgroundColor: 'rgba(0, 168, 132, 0.22)' }
+                : undefined
+            }
+          >
             <SystemMessage text={item.message.text} />
-          </View>
-        ) : (
-          <SystemMessage text={item.message.text} />
+          </Pressable>
         )
       }
 
@@ -145,6 +158,7 @@ export default function ChatScreen() {
           message={item.message}
           showSender={item.showSender}
           highlighted={item.id === highlightedMessageId}
+          onLongPress={() => setActionSelection({ message: item.message, sequence: item.sequence })}
         />
       )
     },
@@ -367,6 +381,11 @@ export default function ChatScreen() {
             </View>
           )}
         </View>
+        <MessageActionSheet
+          chatId={chatData.chatId}
+          selection={actionSelection}
+          onClose={() => setActionSelection(null)}
+        />
       </SafeAreaView>
     </AudioPlayerProvider>
   )
