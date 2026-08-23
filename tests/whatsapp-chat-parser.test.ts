@@ -14,7 +14,8 @@ function image(filename: string, uri: string): MediaAttachment {
     width: 80,
     height: 60,
     duration: null,
-    previewUri: `${uri}.preview.jpg`
+    previewUri: `${uri}.preview.jpg`,
+    waveform: null
   }
 }
 

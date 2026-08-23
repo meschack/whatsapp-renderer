@@ -21,6 +21,7 @@ function record(sequence: number, timestamp: string, sender = 'Alice'): Timeline
     mediaHeight: null,
     mediaDuration: null,
     mediaPreviewUri: null,
+    mediaWaveform: null,
     timestamp: new Date(timestamp),
     isEdited: false,
     isMine: false,

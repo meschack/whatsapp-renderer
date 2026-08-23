@@ -45,7 +45,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 9
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 10
 
 const migrations: Migration[] = [
   {
@@ -215,6 +215,15 @@ const migrations: Migration[] = [
       await database.exec(
         'CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chatId, timestamp)'
       )
+    }
+  },
+  {
+    version: 10,
+    async migrate(database) {
+      const columns = await database.all<{ name: string }>('PRAGMA table_info(messages)')
+      if (!columns.some(column => column.name === 'mediaWaveform')) {
+        await database.exec('ALTER TABLE messages ADD COLUMN mediaWaveform TEXT')
+      }
     }
   }
 ]

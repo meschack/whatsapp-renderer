@@ -10,8 +10,7 @@ describe('media indexer', () => {
     new DataView(png.buffer).setUint32(16, 4032)
     new DataView(png.buffer).setUint32(20, 3024)
     const jpeg = new Uint8Array([
-      0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x04, 0x38, 0x07, 0x80, 0x03, 0x01, 0x11,
-      0x00
+      0xff, 0xd8, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x04, 0x38, 0x07, 0x80, 0x03, 0x01, 0x11, 0x00
     ])
 
     expect(readImageDimensions(png)).toEqual({ width: 4032, height: 3024 })
@@ -36,12 +35,30 @@ describe('media indexer', () => {
         active--
 
         if (candidate.type === 'image') {
-          return { width: 4032, height: 3024, duration: null, previewUri: 'file:///chat/previews/0.jpg' }
+          return {
+            width: 4032,
+            height: 3024,
+            duration: null,
+            previewUri: 'file:///chat/previews/0.jpg',
+            waveform: null
+          }
         }
         if (candidate.type === 'video') {
-          return { width: 1920, height: 1080, duration: 12.5, previewUri: 'file:///chat/previews/1.jpg' }
+          return {
+            width: 1920,
+            height: 1080,
+            duration: 12.5,
+            previewUri: 'file:///chat/previews/1.jpg',
+            waveform: null
+          }
         }
-        return { width: null, height: null, duration: 4.2, previewUri: null }
+        return {
+          width: null,
+          height: null,
+          duration: 4.2,
+          previewUri: null,
+          waveform: [3, 7, 12]
+        }
       },
       yieldToMainThread: async () => {
         yieldCount++
@@ -55,10 +72,15 @@ describe('media indexer', () => {
       width: 4032,
       height: 3024,
       duration: null,
-      previewUri: 'file:///chat/previews/0.jpg'
+      previewUri: 'file:///chat/previews/0.jpg',
+      waveform: null
     })
     expect(result.get('clip.mp4')).toMatchObject({ type: 'video', duration: 12.5 })
-    expect(result.get('voice.opus')).toMatchObject({ type: 'audio', duration: 4.2 })
+    expect(result.get('voice.opus')).toMatchObject({
+      type: 'audio',
+      duration: 4.2,
+      waveform: [3, 7, 12]
+    })
     expect(maxActive).toBe(1)
     expect(yieldCount).toBe(candidates.length)
     expect(progress).toEqual([
@@ -89,7 +111,37 @@ describe('media indexer', () => {
       width: null,
       height: null,
       duration: null,
-      previewUri: null
+      previewUri: null,
+      waveform: null
     })
+  })
+
+  it('stops media inspection without publishing partial results when cancelled', async () => {
+    const controller = new AbortController()
+    const progress: MediaCandidate[] = []
+    const candidate: MediaCandidate = {
+      filename: 'voice.opus',
+      uri: 'file:///chat/voice.opus',
+      type: 'audio',
+      size: 42_000
+    }
+    const indexMedia = createMediaIndexer({
+      inspect: async () => {
+        controller.abort()
+        return {
+          width: null,
+          height: null,
+          duration: 4.2,
+          previewUri: null,
+          waveform: [3, 8, 12]
+        }
+      },
+      yieldToMainThread: async () => {}
+    })
+
+    await expect(
+      indexMedia([candidate], () => progress.push(candidate), controller.signal)
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(progress).toEqual([])
   })
 })

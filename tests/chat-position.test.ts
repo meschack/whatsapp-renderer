@@ -11,6 +11,7 @@ import {
   getInitialMessagePage,
   findFirstMessageOnLocalDay,
   getChatDays,
+  hasUnindexedMedia,
   getBookmarkPage,
   getNewerAttachmentPage,
   getOlderAttachmentPage,
@@ -55,6 +56,7 @@ function createDatabase(): DatabaseSync {
       mediaHeight INTEGER,
       mediaDuration REAL,
       mediaPreviewUri TEXT,
+      mediaWaveform TEXT,
       timestamp INTEGER NOT NULL,
       isEdited INTEGER NOT NULL DEFAULT 0,
       isMine INTEGER NOT NULL DEFAULT 0,
@@ -148,12 +150,35 @@ describe('chat position restoration', () => {
   })
 
   it('lets an explicit navigation target override the persisted position', async () => {
+    const persistedWaveform = Array.from({ length: 40 }, (_, index) => 3 + (index % 16))
+    sqlite
+      .prepare('UPDATE messages SET mediaWaveform = ? WHERE id = 4')
+      .run(JSON.stringify(persistedWaveform))
     await saveChatPosition('chat-1', 11)
 
     const page = await getInitialMessagePage('chat-1', 5, 4)
 
     expect(page.records.map(record => record.sequence)).toEqual([2, 3, 4, 5, 6])
     expect(page.restoredSequence).toBe(4)
+    expect(page.records.find(record => record.sequence === 4)?.message.mediaWaveform).toEqual(
+      persistedWaveform
+    )
+  })
+
+  it('re-indexes legacy audio rows until their persisted waveform exists', async () => {
+    sqlite
+      .prepare(
+        `UPDATE messages
+         SET mediaType = 'audio', mediaUri = 'file:///voice.opus', mediaFilename = 'voice.opus'
+         WHERE id = 3`
+      )
+      .run()
+
+    await expect(hasUnindexedMedia('chat-1')).resolves.toBe(true)
+    sqlite
+      .prepare('UPDATE messages SET mediaWaveform = ? WHERE id = 3')
+      .run(JSON.stringify(new Array(40).fill(8)))
+    await expect(hasUnindexedMedia('chat-1')).resolves.toBe(false)
   })
 
   it('indexes local conversation days and resolves the first message on a selected day', async () => {

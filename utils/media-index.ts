@@ -5,6 +5,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import { createVideoPlayer } from 'expo-video'
 
 import { readImageDimensions } from '@/utils/image-dimensions'
+import { deriveAudioWaveform, MAX_WAVEFORM_BYTES } from '@/utils/audio-waveform'
 import { MEDIA_PREVIEW_DIRECTORY } from '@/utils/media-file'
 import {
   createMediaIndexer,
@@ -15,6 +16,14 @@ import {
 
 const PREVIEW_MAX_SIZE = 640
 const HEADER_READ_LIMIT = 512 * 1024
+const WAVEFORM_READ_CHUNK = 128 * 1024
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Media indexing cancelled')
+  error.name = 'AbortError'
+  throw error
+}
 
 function persistPreview(cacheUri: string, previewDirectory: Directory, index: number): string {
   const source = new File(cacheUri)
@@ -55,7 +64,8 @@ async function createImagePreview(
     return {
       ...dimensions,
       duration: null,
-      previewUri: persistPreview(saved.uri, previewDirectory, index)
+      previewUri: persistPreview(saved.uri, previewDirectory, index),
+      waveform: null
     }
   } finally {
     rendered?.release()
@@ -72,7 +82,9 @@ async function createVideoPreview(
   const player = createVideoPlayer(candidate.uri)
   let thumbnail: Awaited<ReturnType<typeof player.generateThumbnailsAsync>>[number] | null = null
   let context: ReturnType<typeof ImageManipulator.manipulate> | null = null
-  let rendered: Awaited<ReturnType<ReturnType<typeof ImageManipulator.manipulate>['renderAsync']>> | null = null
+  let rendered: Awaited<
+    ReturnType<ReturnType<typeof ImageManipulator.manipulate>['renderAsync']>
+  > | null = null
   try {
     const thumbnails = await player.generateThumbnailsAsync(0, {
       maxWidth: PREVIEW_MAX_SIZE,
@@ -88,7 +100,8 @@ async function createVideoPreview(
       width: track?.size.width ?? thumbnail.width,
       height: track?.size.height ?? thumbnail.height,
       duration: player.duration > 0 ? player.duration : null,
-      previewUri: persistPreview(saved.uri, previewDirectory, index)
+      previewUri: persistPreview(saved.uri, previewDirectory, index),
+      waveform: null
     }
   } finally {
     rendered?.release()
@@ -98,17 +111,19 @@ async function createVideoPreview(
   }
 }
 
-function waitForAudioDuration(uri: string): Promise<number | null> {
+function waitForAudioDuration(uri: string, signal?: AbortSignal): Promise<number | null> {
   const player = createAudioPlayer(uri, { updateInterval: 100 })
   return new Promise(resolve => {
     let settled = false
     let subscription: { remove: () => void } | null = null
     let timeout: ReturnType<typeof setTimeout> | null = null
+    let abort = () => {}
     const finish = (duration: number | null) => {
       if (settled) return
       settled = true
       if (timeout) clearTimeout(timeout)
       subscription?.remove()
+      signal?.removeEventListener('abort', abort)
       player.release()
       resolve(duration)
     }
@@ -117,8 +132,36 @@ function waitForAudioDuration(uri: string): Promise<number | null> {
     }
     subscription = player.addListener('playbackStatusUpdate', accept)
     timeout = setTimeout(() => finish(null), 4_000)
+    abort = () => finish(null)
+    signal?.addEventListener('abort', abort, { once: true })
     accept(player.currentStatus)
   })
+}
+
+async function readAudioWaveform(
+  candidate: MediaCandidate,
+  signal?: AbortSignal
+): Promise<number[] | null> {
+  const file = new File(candidate.uri)
+  const handle = file.open()
+  try {
+    const readLength = Math.min(handle.size ?? candidate.size, MAX_WAVEFORM_BYTES)
+    if (readLength < 64) return null
+    const bytes = new Uint8Array(readLength)
+    let offset = 0
+    while (offset < readLength) {
+      throwIfAborted(signal)
+      const chunk = handle.readBytes(Math.min(WAVEFORM_READ_CHUNK, readLength - offset))
+      if (chunk.length === 0) break
+      bytes.set(chunk, offset)
+      offset += chunk.length
+      await new Promise(resolve => setTimeout(resolve, 0))
+    }
+    throwIfAborted(signal)
+    return deriveAudioWaveform(offset === bytes.length ? bytes : bytes.slice(0, offset))
+  } finally {
+    handle.close()
+  }
 }
 
 export function createNativeMediaIndexer(directoryUri: string) {
@@ -126,7 +169,7 @@ export function createNativeMediaIndexer(directoryUri: string) {
   previewDirectory.create({ idempotent: true, intermediates: true })
 
   return createMediaIndexer({
-    inspect: async (candidate, index) => {
+    inspect: async (candidate, index, signal) => {
       if (candidate.type === 'image') {
         return createImagePreview(candidate, previewDirectory, index)
       }
@@ -134,14 +177,19 @@ export function createNativeMediaIndexer(directoryUri: string) {
         return createVideoPreview(candidate, previewDirectory, index)
       }
       if (candidate.type === 'audio') {
+        const [duration, waveform] = await Promise.all([
+          waitForAudioDuration(candidate.uri, signal),
+          readAudioWaveform(candidate, signal)
+        ])
         return {
           width: null,
           height: null,
-          duration: await waitForAudioDuration(candidate.uri),
-          previewUri: null
+          duration,
+          previewUri: null,
+          waveform
         }
       }
-      return { width: null, height: null, duration: null, previewUri: null }
+      return { width: null, height: null, duration: null, previewUri: null, waveform: null }
     },
     yieldToMainThread: () => new Promise(resolve => setTimeout(resolve, 0))
   })
@@ -150,7 +198,8 @@ export function createNativeMediaIndexer(directoryUri: string) {
 export function indexMedia(
   candidates: MediaCandidate[],
   directoryUri: string,
-  onProgress?: (progress: MediaIndexProgress) => void
+  onProgress?: (progress: MediaIndexProgress) => void,
+  signal?: AbortSignal
 ) {
-  return createNativeMediaIndexer(directoryUri)(candidates, onProgress)
+  return createNativeMediaIndexer(directoryUri)(candidates, onProgress, signal)
 }

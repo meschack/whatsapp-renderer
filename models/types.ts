@@ -10,6 +10,7 @@ export interface Message {
   mediaHeight: number | null
   mediaDuration: number | null
   mediaPreviewUri: string | null
+  mediaWaveform: number[] | null
   timestamp: Date
   isEdited: boolean
   isMine: boolean
@@ -27,6 +28,7 @@ export interface MediaAttachment {
   height: number | null
   duration: number | null
   previewUri: string | null
+  waveform: number[] | null
 }
 
 export type MediaMap = Map<string, MediaAttachment>

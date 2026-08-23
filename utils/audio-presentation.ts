@@ -32,12 +32,6 @@ export function formatPlaybackRate(rate: number): string {
   return `${Number.isInteger(rate) ? rate.toFixed(0) : rate}x`
 }
 
-export function hasUsableWaveformCoverage(buckets: number[], minimumCoverage = 0.6): boolean {
-  if (buckets.length === 0) return false
-  const sampled = buckets.filter(value => value > 0).length
-  return sampled / buckets.length >= minimumCoverage
-}
-
 /**
  * Stretch ordinary speech across the available height range. A tiny deterministic
  * texture keeps near-flat samples legible without changing their overall envelope.

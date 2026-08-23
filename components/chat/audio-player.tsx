@@ -54,8 +54,9 @@ export const AudioPlayer = memo(function AudioPlayer({
   const showPlaybackRate = shouldShowPlaybackRate(state)
   const liveCurrentTime = isPlaying ? state.currentTime : 0
 
+  const knownDuration = state.duration > 0 ? state.duration : (message.mediaDuration ?? 0)
   const displayDuration =
-    liveCurrentTime > 0 ? formatSeconds(liveCurrentTime) : formatSeconds(state.duration)
+    liveCurrentTime > 0 ? formatSeconds(liveCurrentTime) : formatSeconds(knownDuration)
 
   const handlePlayPause = useCallback(() => {
     if (uri) {
@@ -85,8 +86,8 @@ export const AudioPlayer = memo(function AudioPlayer({
   )
 
   const bars = useMemo(() => {
-    return state.waveform ?? getFallbackWaveform(uri ?? 'voice-note')
-  }, [uri, state.waveform])
+    return message.mediaWaveform ?? getFallbackWaveform(uri ?? 'voice-note')
+  }, [message.mediaWaveform, uri])
 
   useEffect(() => {
     cancelAnimation(animatedProgress)

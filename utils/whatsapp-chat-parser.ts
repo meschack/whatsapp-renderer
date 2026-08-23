@@ -239,7 +239,8 @@ function mediaForFilename(filename: string, mediaMap: MediaMap) {
     mediaWidth: attachment?.width ?? null,
     mediaHeight: attachment?.height ?? null,
     mediaDuration: attachment?.duration ?? null,
-    mediaPreviewUri: attachment?.previewUri ?? null
+    mediaPreviewUri: attachment?.previewUri ?? null,
+    mediaWaveform: attachment?.waveform ?? null
   } satisfies Pick<
     Message,
     | 'mediaType'
@@ -250,6 +251,7 @@ function mediaForFilename(filename: string, mediaMap: MediaMap) {
     | 'mediaHeight'
     | 'mediaDuration'
     | 'mediaPreviewUri'
+    | 'mediaWaveform'
   >
 }
 
@@ -261,7 +263,8 @@ const EMPTY_MEDIA = {
   mediaWidth: null,
   mediaHeight: null,
   mediaDuration: null,
-  mediaPreviewUri: null
+  mediaPreviewUri: null,
+  mediaWaveform: null
 } as const
 
 function detectMedia(text: string, mediaMap: MediaMap, diagnostics: ImportDiagnostics) {

@@ -98,7 +98,8 @@ describe('archive bootstrap', () => {
         'mediaWidth',
         'mediaHeight',
         'mediaDuration',
-        'mediaPreviewUri'
+        'mediaPreviewUri',
+        'mediaWaveform'
       ])
     )
     expect(

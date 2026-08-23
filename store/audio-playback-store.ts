@@ -6,7 +6,6 @@ export interface AudioRowSnapshot {
   duration: number
   hasPlayed: boolean
   playbackRate: number
-  waveform: number[] | null
 }
 
 type ActiveStatus = Pick<
@@ -21,8 +20,7 @@ const DEFAULT_SNAPSHOT: AudioRowSnapshot = {
   currentTime: 0,
   duration: 0,
   hasPlayed: false,
-  playbackRate: 1,
-  waveform: null
+  playbackRate: 1
 }
 
 const MAX_CACHED_ROWS = 200
@@ -83,10 +81,6 @@ export class AudioPlaybackStore {
   setDuration(uri: string, duration: number): void {
     if (duration <= 0 || this.getSnapshot(uri).duration === duration) return
     this.updateRow(uri, { duration })
-  }
-
-  setWaveform(uri: string, waveform: number[]): void {
-    this.updateRow(uri, { waveform })
   }
 
   setPlaybackRate(rate: number): void {

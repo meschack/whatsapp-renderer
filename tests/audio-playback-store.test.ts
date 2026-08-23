@@ -45,18 +45,16 @@ describe('AudioPlaybackStore', () => {
     expect(store.getSnapshot('second.opus').isActive).toBe(true)
   })
 
-  it('caches duration and waveform without changing unrelated rows', () => {
+  it('caches duration without changing unrelated rows', () => {
     const store = new AudioPlaybackStore()
     const unrelatedListener = vi.fn()
     store.subscribe('other.opus', unrelatedListener)
 
     store.setDuration('voice.opus', 42)
-    store.setWaveform('voice.opus', [4, 8, 12])
 
     expect(unrelatedListener).not.toHaveBeenCalled()
     expect(store.getSnapshot('voice.opus')).toMatchObject({
-      duration: 42,
-      waveform: [4, 8, 12]
+      duration: 42
     })
   })
 })

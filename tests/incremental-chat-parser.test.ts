@@ -63,7 +63,8 @@ describe('incremental chat parser', () => {
             width: 80,
             height: 60,
             duration: null,
-            previewUri: 'file:///chat/previews/photo.jpg'
+            previewUri: 'file:///chat/previews/photo.jpg',
+            waveform: null
           } as const
         ]
       ]),

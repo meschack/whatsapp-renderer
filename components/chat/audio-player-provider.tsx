@@ -1,19 +1,8 @@
 import { audioPlaybackStore } from '@/store/audio-playback-store'
-import {
-  AUDIO_BAR_COUNT,
-  hasUsableWaveformCoverage,
-  normalizeWaveformBuckets
-} from '@/utils/audio-presentation'
-import {
-  requestRecordingPermissionsAsync,
-  useAudioPlayer,
-  useAudioPlayerStatus,
-  useAudioSampleListener
-} from 'expo-audio'
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 
 const PLAYBACK_RATES = [1, 1.5, 2] as const
-const MAX_WAVEFORM_CACHE = 100
 
 interface AudioPlayerControls {
   play: (uri: string) => Promise<void>
@@ -33,10 +22,6 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const activeUriRef = useRef<string | null>(null)
   const pendingPlayUriRef = useRef<string | null>(null)
   const rateIndexRef = useRef(0)
-  const waveformBucketsRef = useRef<Map<string, number[]>>(new Map())
-  const samplingPermissionRef = useRef<'unknown' | 'granted' | 'denied'>(
-    process.env.EXPO_OS === 'android' ? 'unknown' : 'granted'
-  )
 
   useEffect(() => {
     const uri = activeUriRef.current
@@ -59,58 +44,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     }
   }, [player, status.currentTime, status.duration, status.playing])
 
-  useAudioSampleListener(player, sample => {
-    const uri = activeUriRef.current
-    const currentStatus = statusRef.current
-    if (!uri || currentStatus.duration <= 0) return
-
-    const frames = sample.channels[0]?.frames
-    if (!frames || frames.length === 0) return
-
-    let sum = 0
-    for (let index = 0; index < frames.length; index++) sum += frames[index] * frames[index]
-    const rms = Math.sqrt(sum / frames.length)
-    const bucketIndex = Math.min(
-      AUDIO_BAR_COUNT - 1,
-      Math.floor((currentStatus.currentTime / currentStatus.duration) * AUDIO_BAR_COUNT)
-    )
-    const buckets = waveformBucketsRef.current.get(uri) ?? new Array(AUDIO_BAR_COUNT).fill(0)
-    buckets[bucketIndex] = Math.max(buckets[bucketIndex], rms)
-    waveformBucketsRef.current.delete(uri)
-    waveformBucketsRef.current.set(uri, buckets)
-
-    while (waveformBucketsRef.current.size > MAX_WAVEFORM_CACHE) {
-      const oldest = waveformBucketsRef.current.keys().next().value
-      if (!oldest) break
-      waveformBucketsRef.current.delete(oldest)
-    }
-  })
-
-  useEffect(() => {
-    const uri = activeUriRef.current
-    const didFinish =
-      uri !== null &&
-      status.duration > 0 &&
-      !status.playing &&
-      status.currentTime >= status.duration - 0.1
-    if (!uri || !didFinish) return
-
-    const buckets = waveformBucketsRef.current.get(uri)
-    if (!buckets || !hasUsableWaveformCoverage(buckets)) return
-    audioPlaybackStore.setWaveform(uri, normalizeWaveformBuckets(buckets))
-  }, [status.currentTime, status.duration, status.playing])
-
-  const ensureSamplingPermission = useCallback(async () => {
-    if (process.env.EXPO_OS !== 'android' || samplingPermissionRef.current === 'granted') return
-    if (samplingPermissionRef.current === 'denied') return
-
-    const response = await requestRecordingPermissionsAsync()
-    samplingPermissionRef.current = response.granted ? 'granted' : 'denied'
-  }, [])
-
   const play = useCallback(
     async (uri: string) => {
-      void ensureSamplingPermission()
       const currentStatus = statusRef.current
 
       if (uri === activeUriRef.current) {
@@ -133,7 +68,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       audioPlaybackStore.setActiveUri(uri)
       player.replace({ uri })
     },
-    [ensureSamplingPermission, player]
+    [player]
   )
 
   const pause = useCallback(() => player.pause(), [player])
