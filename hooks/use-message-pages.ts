@@ -19,7 +19,11 @@ const DEFAULT_PAGE_SIZE = 100
 const DEFAULT_MAX_MESSAGES = 600
 
 interface MessageRepository {
-  initial: (chatId: string, limit: number) => Promise<InitialMessagePage>
+  initial: (
+    chatId: string,
+    limit: number,
+    preferredSequence?: number
+  ) => Promise<InitialMessagePage>
   older: (chatId: string, beforeSequence: number, limit: number) => Promise<MessagePage>
   newer: (chatId: string, afterSequence: number, limit: number) => Promise<MessagePage>
 }
@@ -33,6 +37,8 @@ const messageRepository: MessageRepository = {
 interface MessagePagesOptions {
   pageSize?: number
   maxMessages?: number
+  initialSequence?: number
+  initialRequestKey?: number
   repository?: MessageRepository
   onPageLoad?: (event: { direction: 'initial' | 'older' | 'newer'; durationMs: number }) => void
 }
@@ -41,6 +47,8 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE
   const maxMessages = options.maxMessages ?? DEFAULT_MAX_MESSAGES
   const repository = options.repository ?? messageRepository
+  const initialSequence = options.initialSequence
+  const initialRequestKey = options.initialRequestKey ?? 0
   const onPageLoadRef = useRef(options.onPageLoad)
   onPageLoadRef.current = options.onPageLoad
 
@@ -94,7 +102,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
     setIsInitialLoading(true)
     const startedAt = performance.now()
 
-    void repository.initial(chatId, pageSize).then(
+    void repository.initial(chatId, pageSize, initialSequence).then(
       page => {
         if (generationRef.current !== generation) return
         replaceRecords(page.records)
@@ -117,7 +125,16 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
     return () => {
       if (generationRef.current === generation) generationRef.current++
     }
-  }, [chatId, pageSize, repository, replaceHasNewer, replaceHasOlder, replaceRecords])
+  }, [
+    chatId,
+    initialRequestKey,
+    initialSequence,
+    pageSize,
+    repository,
+    replaceHasNewer,
+    replaceHasOlder,
+    replaceRecords
+  ])
 
   const loadOlder = useCallback(async () => {
     if (!chatId || !hasOlderRef.current || inFlightRef.current.older) return
