@@ -1,4 +1,5 @@
-import type { MediaMap, Message } from '../models/types'
+import type { ImportDiagnostics, MediaMap, Message } from '../models/types'
+import { createImportDiagnostics, recordImportDiagnostic } from './import-diagnostics'
 import { getMediaType } from './media-file'
 import { stripEditedMarker } from './message-text'
 
@@ -23,16 +24,19 @@ interface ChatScan {
   senderCounts: Map<string, number>
   dmyEvidence: number
   mdyEvidence: number
+  ambiguousDateCount: number
 }
 
 export interface ParsedWhatsAppChat {
   participants: string[]
   messages: Message[]
+  diagnostics: ImportDiagnostics
 }
 
 export interface WhatsAppChatMetadata {
   participants: string[]
   messageCount: number
+  diagnostics: ImportDiagnostics
 }
 
 const INVISIBLE_CHARS = /[\u200e\u200f\u200b\u200c\u200d\ufeff\u202a-\u202e\u2066-\u2069]/g
@@ -68,11 +72,13 @@ function matchMessageStart(line: string): MessageStart | null {
 
 class RawMessageAssembler {
   private current: RawMessage | null = null
+  constructor(private readonly onMalformedLine?: (line: string) => void) {}
 
   push(line: string): RawMessage | null {
     const start = matchMessageStart(line)
     if (!start) {
       if (this.current) this.current.text += `\n${line}`
+      else if (line.trim()) this.onMalformedLine?.(line)
       return null
     }
 
@@ -125,8 +131,12 @@ async function* linesInChunks(chunks: AsyncIterable<string>): AsyncGenerator<str
   if (pending.length > 0) yield pending.replace(/\r$/, '')
 }
 
-function visitRawMessages(lines: Iterable<string>, visit: (message: RawMessage) => void): void {
-  const assembler = new RawMessageAssembler()
+function visitRawMessages(
+  lines: Iterable<string>,
+  visit: (message: RawMessage) => void,
+  onMalformedLine?: (line: string) => void
+): void {
+  const assembler = new RawMessageAssembler(onMalformedLine)
   for (const line of lines) {
     const completed = assembler.push(line)
     if (completed) visit(completed)
@@ -137,9 +147,10 @@ function visitRawMessages(lines: Iterable<string>, visit: (message: RawMessage) 
 
 async function visitRawMessageChunks(
   chunks: AsyncIterable<string>,
-  visit: (message: RawMessage) => void | Promise<void>
+  visit: (message: RawMessage) => void | Promise<void>,
+  onMalformedLine?: (line: string) => void
 ): Promise<void> {
-  const assembler = new RawMessageAssembler()
+  const assembler = new RawMessageAssembler(onMalformedLine)
   for await (const line of linesInChunks(chunks)) {
     const completed = assembler.push(line)
     if (completed) await visit(completed)
@@ -154,7 +165,8 @@ function createChatScan(): ChatScan {
     participantSet: new Set(),
     senderCounts: new Map(),
     dmyEvidence: 0,
-    mdyEvidence: 0
+    mdyEvidence: 0,
+    ambiguousDateCount: 0
   }
 }
 
@@ -162,6 +174,7 @@ function scanRawMessage(scan: ChatScan, message: RawMessage): void {
   const [first, second] = message.date.split('/').map(Number)
   if (first > 12) scan.dmyEvidence++
   if (second > 12) scan.mdyEvidence++
+  if (first <= 12 && second <= 12) scan.ambiguousDateCount++
 
   if (!message.sender) return
   if (!scan.participantSet.has(message.sender)) {
@@ -175,7 +188,19 @@ function inferDateOrder(scan: ChatScan): DateOrder {
   return scan.dmyEvidence > scan.mdyEvidence ? 'DMY' : 'MDY'
 }
 
-function parseTimestamp(dateString: string, timeString: string, order: DateOrder): Date {
+function recordAmbiguousDates(scan: ChatScan, diagnostics: ImportDiagnostics): void {
+  if (scan.dmyEvidence !== scan.mdyEvidence) return
+
+  for (let index = 0; index < scan.ambiguousDateCount; index++) {
+    recordImportDiagnostic(
+      diagnostics,
+      'ambiguous-dates',
+      'Date order could not be inferred; month/day was used.'
+    )
+  }
+}
+
+function parseTimestamp(dateString: string, timeString: string, order: DateOrder): Date | null {
   const [first, second, rawYear] = dateString.split('/').map(Number)
   const year = rawYear < 100 ? rawYear + 2000 : rawYear
   const day = order === 'DMY' ? first : second
@@ -192,7 +217,16 @@ function parseTimestamp(dateString: string, timeString: string, order: DateOrder
   if (isPm && hours !== 12) hours += 12
   if (isAm && hours === 12) hours = 0
 
-  return new Date(year, month - 1, day, hours, minutes, seconds)
+  const timestamp = new Date(year, month - 1, day, hours, minutes, seconds)
+  const isValid =
+    timestamp.getFullYear() === year &&
+    timestamp.getMonth() === month - 1 &&
+    timestamp.getDate() === day &&
+    timestamp.getHours() === hours &&
+    timestamp.getMinutes() === minutes &&
+    timestamp.getSeconds() === seconds
+
+  return isValid ? timestamp : null
 }
 
 function mediaForFilename(filename: string, mediaMap: MediaMap) {
@@ -230,24 +264,38 @@ const EMPTY_MEDIA = {
   mediaPreviewUri: null
 } as const
 
-function detectMedia(text: string, mediaMap: MediaMap) {
+function detectMedia(text: string, mediaMap: MediaMap, diagnostics: ImportDiagnostics) {
   const stripped = text.replace(INVISIBLE_CHARS, '').trim()
 
   if (OMITTED_MEDIA_PATTERNS.some(pattern => pattern.test(stripped))) {
+    recordImportDiagnostic(diagnostics, 'missing-files', stripped)
     return { ...EMPTY_MEDIA, mediaType: 'image' as const, cleanText: null }
   }
 
   const angleAttached = stripped.match(ATTACHED_ANGLE_REGEX)
   if (angleAttached) {
-    return { ...mediaForFilename(angleAttached[1].trim(), mediaMap), cleanText: null }
+    const filename = angleAttached[1].trim()
+    if (!mediaMap.has(filename)) {
+      recordImportDiagnostic(
+        diagnostics,
+        getMediaType(filename) ? 'missing-files' : 'unsupported-formats',
+        filename
+      )
+    }
+    return { ...mediaForFilename(filename, mediaMap), cleanText: null }
   }
 
   const suffixAttached = stripped.match(ATTACHED_SUFFIX_REGEX)
   if (suffixAttached) {
     const filename = suffixAttached[1].trim()
-    if (mediaMap.has(filename) || getMediaType(filename)) {
-      return { ...mediaForFilename(filename, mediaMap), cleanText: null }
+    if (!mediaMap.has(filename)) {
+      recordImportDiagnostic(
+        diagnostics,
+        getMediaType(filename) ? 'missing-files' : 'unsupported-formats',
+        filename
+      )
     }
+    return { ...mediaForFilename(filename, mediaMap), cleanText: null }
   }
 
   if (mediaMap.has(stripped)) {
@@ -272,8 +320,7 @@ function detectMyName(scan: ChatScan, myName?: string): string | null {
 
   return scan.participants.reduce<string | null>((mostFrequent, participant) => {
     if (!mostFrequent) return participant
-    return (scan.senderCounts.get(participant) ?? 0) >
-      (scan.senderCounts.get(mostFrequent) ?? 0)
+    return (scan.senderCounts.get(participant) ?? 0) > (scan.senderCounts.get(mostFrequent) ?? 0)
       ? participant
       : mostFrequent
   }, null)
@@ -284,20 +331,34 @@ function parseRawMessage(
   index: number,
   dateOrder: DateOrder,
   detectedMyName: string | null,
-  mediaMap: MediaMap
+  mediaMap: MediaMap,
+  diagnostics: ImportDiagnostics
 ): Message | null {
   const { cleanText: editedText, isEdited } = stripEditedMarker(raw.text)
-  const { cleanText, ...media } = detectMedia(editedText ?? '', mediaMap)
+  const { cleanText, ...media } = detectMedia(editedText ?? '', mediaMap, diagnostics)
   const text = cleanText?.trim() ? cleanText : null
 
-  if (media.mediaType === 'image' && media.mediaUri === null && text === null) return null
+  if (media.mediaType === 'image' && media.mediaUri === null && text === null) {
+    recordImportDiagnostic(diagnostics, 'skipped-content', raw.text)
+    return null
+  }
+
+  const timestamp = parseTimestamp(raw.date, raw.time, dateOrder)
+  if (!timestamp) {
+    recordImportDiagnostic(
+      diagnostics,
+      'malformed-records',
+      `${raw.date}, ${raw.time} - ${raw.text}`
+    )
+    return null
+  }
 
   return {
     id: `msg-${index}`,
     sender: raw.sender,
     text,
     ...media,
-    timestamp: parseTimestamp(raw.date, raw.time, dateOrder),
+    timestamp,
     isEdited,
     isMine: raw.sender === detectedMyName,
     isSystem: raw.sender === null
@@ -311,7 +372,13 @@ export function visitWhatsAppChat(
   visit: (message: Message) => void
 ): WhatsAppChatMetadata {
   const scan = createChatScan()
-  visitRawMessages(linesIn(content), message => scanRawMessage(scan, message))
+  const diagnostics = createImportDiagnostics()
+  visitRawMessages(
+    linesIn(content),
+    message => scanRawMessage(scan, message),
+    line => recordImportDiagnostic(diagnostics, 'malformed-records', line)
+  )
+  recordAmbiguousDates(scan, diagnostics)
 
   const dateOrder = inferDateOrder(scan)
   const detectedMyName = detectMyName(scan, myName)
@@ -319,13 +386,20 @@ export function visitWhatsAppChat(
   let rawIndex = 0
 
   visitRawMessages(linesIn(content), raw => {
-    const message = parseRawMessage(raw, rawIndex++, dateOrder, detectedMyName, mediaMap)
+    const message = parseRawMessage(
+      raw,
+      rawIndex++,
+      dateOrder,
+      detectedMyName,
+      mediaMap,
+      diagnostics
+    )
     if (!message) return
     visit(message)
     messageCount++
   })
 
-  return { participants: scan.participants, messageCount }
+  return { participants: scan.participants, messageCount, diagnostics }
 }
 
 export async function visitWhatsAppChatStream(
@@ -335,7 +409,13 @@ export async function visitWhatsAppChatStream(
   visit: (message: Message) => void | Promise<void>
 ): Promise<WhatsAppChatMetadata> {
   const scan = createChatScan()
-  await visitRawMessageChunks(openTranscript(), message => scanRawMessage(scan, message))
+  const diagnostics = createImportDiagnostics()
+  await visitRawMessageChunks(
+    openTranscript(),
+    message => scanRawMessage(scan, message),
+    line => recordImportDiagnostic(diagnostics, 'malformed-records', line)
+  )
+  recordAmbiguousDates(scan, diagnostics)
 
   const dateOrder = inferDateOrder(scan)
   const detectedMyName = detectMyName(scan, myName)
@@ -343,13 +423,20 @@ export async function visitWhatsAppChatStream(
   let rawIndex = 0
 
   await visitRawMessageChunks(openTranscript(), async raw => {
-    const message = parseRawMessage(raw, rawIndex++, dateOrder, detectedMyName, mediaMap)
+    const message = parseRawMessage(
+      raw,
+      rawIndex++,
+      dateOrder,
+      detectedMyName,
+      mediaMap,
+      diagnostics
+    )
     if (!message) return
     await visit(message)
     messageCount++
   })
 
-  return { participants: scan.participants, messageCount }
+  return { participants: scan.participants, messageCount, diagnostics }
 }
 
 export function parseWhatsAppChat(
@@ -358,9 +445,9 @@ export function parseWhatsAppChat(
   myName?: string
 ): ParsedWhatsAppChat {
   const messages: Message[] = []
-  const { participants } = visitWhatsAppChat(content, mediaMap, myName, message => {
+  const { participants, diagnostics } = visitWhatsAppChat(content, mediaMap, myName, message => {
     messages.push(message)
   })
 
-  return { participants, messages }
+  return { participants, messages, diagnostics }
 }

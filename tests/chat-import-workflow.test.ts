@@ -8,6 +8,7 @@ import {
 } from '../utils/chat-import-workflow'
 import type { Message, SavedChat } from '../models/types'
 import { createArchiveFingerprint } from '../utils/archive-identity'
+import { createImportDiagnostics } from '../utils/import-diagnostics'
 
 function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
   const savedChats = new Map<string, SavedChat>()
@@ -152,6 +153,27 @@ describe('chat import workflow', () => {
       { phase: 'persisting', completed: 6, total: 7 },
       { phase: 'complete', completed: 7, total: 7 }
     ])
+  })
+
+  it('preserves parser diagnostics in saved chat metadata', async () => {
+    const diagnostics = createImportDiagnostics()
+    diagnostics.counts['missing-files'] = 2
+    diagnostics.samples['missing-files'] = ['photo.jpg']
+    const harness = createHarness({
+      parseTranscript: async () => ({
+        participants: ['Me', 'Alice'],
+        messageCount: 1,
+        diagnostics
+      })
+    })
+
+    const result = await harness.importChat({
+      temporaryArchiveUri: 'file:///cache/armel.zip',
+      archiveName: 'Armel.zip'
+    })
+
+    expect(result.chat.importDiagnostics).toEqual(diagnostics)
+    expect(harness.savedChats.get('chat-42')?.importDiagnostics).toEqual(diagnostics)
   })
 
   it('removes partial messages, metadata, the extracted directory, and the temporary archive', async () => {

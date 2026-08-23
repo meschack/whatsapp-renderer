@@ -9,6 +9,8 @@ interface ChatHeaderProps {
   onSearchPress?: () => void
   onMediaPress?: () => void
   onBookmarksPress?: () => void
+  diagnosticsCount?: number
+  onDiagnosticsPress?: () => void
 }
 
 export function ChatHeader({
@@ -16,7 +18,9 @@ export function ChatHeader({
   participantCount,
   onSearchPress,
   onMediaPress,
-  onBookmarksPress
+  onBookmarksPress,
+  diagnosticsCount = 0,
+  onDiagnosticsPress
 }: ChatHeaderProps) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -44,6 +48,20 @@ export function ChatHeader({
         </View>
 
         <View className='h-10 flex-row items-center rounded-full border border-white/5 bg-black/10 px-1'>
+          {onDiagnosticsPress && diagnosticsCount > 0 && (
+            <Pressable
+              accessibilityLabel={`View ${diagnosticsCount} import notices`}
+              className='size-9 items-center justify-center'
+              onPress={onDiagnosticsPress}
+            >
+              <Ionicons name='warning-outline' size={20} color='#F7C948' />
+              <View className='absolute top-0.5 right-0.5 min-w-3.5 items-center rounded-full bg-[#F7C948] px-0.5'>
+                <Text className='text-[8px] font-bold text-[#111B21]'>
+                  {diagnosticsCount > 99 ? '99+' : diagnosticsCount}
+                </Text>
+              </View>
+            </Pressable>
+          )}
           {onBookmarksPress && (
             <Pressable
               accessibilityLabel='Browse bookmarks'

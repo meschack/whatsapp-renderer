@@ -1,33 +1,35 @@
 import type { SavedChat } from '@/models/types'
+import { parseImportDiagnostics } from '@/utils/import-diagnostics'
 import { getArchiveDatabase } from './archive-database'
+
+interface SavedChatDatabaseRow extends Omit<SavedChat, 'participants' | 'importDiagnostics'> {
+  participants: string
+  importDiagnostics: string | null
+}
+
+function deserializeSavedChat(row: SavedChatDatabaseRow): SavedChat {
+  return {
+    ...row,
+    participants: JSON.parse(row.participants) as string[],
+    importDiagnostics: parseImportDiagnostics(row.importDiagnostics)
+  }
+}
 
 export const getAllSavedChats = (): SavedChat[] => {
   const db = getArchiveDatabase()
-  const rows = db.getAllSync<{
-    id: string
-    chatName: string
-    myName: string
-    participants: string
-    extractDirUri: string
-    messageCount: number
-    lastMessageText: string | null
-    lastMessageTime: string
-    importedAt: string
-    archiveFingerprint: string | null
-  }>('SELECT * FROM saved_chats ORDER BY lastMessageTime DESC')
+  const rows = db.getAllSync<SavedChatDatabaseRow>(
+    'SELECT * FROM saved_chats ORDER BY lastMessageTime DESC'
+  )
 
-  return rows.map(row => ({
-    ...row,
-    participants: JSON.parse(row.participants) as string[]
-  }))
+  return rows.map(deserializeSavedChat)
 }
 
 export const saveChatMetadata = (chat: SavedChat): void => {
   const db = getArchiveDatabase()
   db.runSync(
     `INSERT INTO saved_chats
-      (id, chatName, myName, participants, extractDirUri, messageCount, lastMessageText, lastMessageTime, importedAt, archiveFingerprint)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, chatName, myName, participants, extractDirUri, messageCount, lastMessageText, lastMessageTime, importedAt, archiveFingerprint, importDiagnostics)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         chatName = excluded.chatName,
         myName = excluded.myName,
@@ -37,7 +39,8 @@ export const saveChatMetadata = (chat: SavedChat): void => {
         lastMessageText = excluded.lastMessageText,
         lastMessageTime = excluded.lastMessageTime,
         importedAt = excluded.importedAt,
-        archiveFingerprint = excluded.archiveFingerprint`,
+        archiveFingerprint = excluded.archiveFingerprint,
+        importDiagnostics = excluded.importDiagnostics`,
     chat.id,
     chat.chatName,
     chat.myName,
@@ -47,7 +50,8 @@ export const saveChatMetadata = (chat: SavedChat): void => {
     chat.lastMessageText,
     chat.lastMessageTime,
     chat.importedAt,
-    chat.archiveFingerprint ?? null
+    chat.archiveFingerprint ?? null,
+    chat.importDiagnostics ? JSON.stringify(chat.importDiagnostics) : null
   )
 }
 
@@ -69,42 +73,20 @@ export const deleteAllSavedChats = (): void => {
 
 export const getSavedChat = (id: string): SavedChat | null => {
   const db = getArchiveDatabase()
-  const row = db.getFirstSync<{
-    id: string
-    chatName: string
-    myName: string
-    participants: string
-    extractDirUri: string
-    messageCount: number
-    lastMessageText: string | null
-    lastMessageTime: string
-    importedAt: string
-    archiveFingerprint: string | null
-  }>('SELECT * FROM saved_chats WHERE id = ?', id)
+  const row = db.getFirstSync<SavedChatDatabaseRow>('SELECT * FROM saved_chats WHERE id = ?', id)
 
   if (!row) return null
 
-  return {
-    ...row,
-    participants: JSON.parse(row.participants) as string[]
-  }
+  return deserializeSavedChat(row)
 }
 
 export const getSavedChatByFingerprint = (fingerprint: string): SavedChat | null => {
   const db = getArchiveDatabase()
-  const row = db.getFirstSync<{
-    id: string
-    chatName: string
-    myName: string
-    participants: string
-    extractDirUri: string
-    messageCount: number
-    lastMessageText: string | null
-    lastMessageTime: string
-    importedAt: string
-    archiveFingerprint: string | null
-  }>('SELECT * FROM saved_chats WHERE archiveFingerprint = ? LIMIT 1', fingerprint)
-  return row ? { ...row, participants: JSON.parse(row.participants) as string[] } : null
+  const row = db.getFirstSync<SavedChatDatabaseRow>(
+    'SELECT * FROM saved_chats WHERE archiveFingerprint = ? LIMIT 1',
+    fingerprint
+  )
+  return row ? deserializeSavedChat(row) : null
 }
 
 /** Atomically swaps archive-owned database state after replacement parsing has succeeded. */
@@ -118,8 +100,8 @@ export const replaceSavedChat = (existingChatId: string, replacement: SavedChat)
     db.runSync(
       `INSERT INTO saved_chats
         (id, chatName, myName, participants, extractDirUri, messageCount, lastMessageText,
-         lastMessageTime, importedAt, archiveFingerprint)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         lastMessageTime, importedAt, archiveFingerprint, importDiagnostics)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       replacement.id,
       replacement.chatName,
       replacement.myName,
@@ -129,7 +111,8 @@ export const replaceSavedChat = (existingChatId: string, replacement: SavedChat)
       replacement.lastMessageText,
       replacement.lastMessageTime,
       replacement.importedAt,
-      replacement.archiveFingerprint ?? null
+      replacement.archiveFingerprint ?? null,
+      replacement.importDiagnostics ? JSON.stringify(replacement.importDiagnostics) : null
     )
   })
 }
