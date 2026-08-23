@@ -1,14 +1,15 @@
 import { Pressable, Text, View } from '@/src/tw'
 import {
   getCachedLinkPreview,
+  getPersistedLinkPreview,
   loadLinkPreview,
   type LinkPreviewData
-} from '@/utils/link-preview-cache'
+} from '@/utils/link-preview-service'
 import { Ionicons } from '@expo/vector-icons'
 import { useRecyclingState } from '@shopify/flash-list'
 import { Image } from 'expo-image'
-import { memo, useCallback, useEffect } from 'react'
-import { InteractionManager, Linking } from 'react-native'
+import { memo, useCallback, useEffect, useRef } from 'react'
+import { ActivityIndicator, Linking } from 'react-native'
 
 interface LinkPreviewProps {
   url: string
@@ -18,35 +19,71 @@ interface LinkPreviewProps {
 export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPreviewProps) {
   const cached = getCachedLinkPreview(url)
   const [preview, setPreview] = useRecyclingState<LinkPreviewData | null>(cached.data, [url])
-  const [settled, setSettled] = useRecyclingState(cached.isCached, [url])
+  const [status, setStatus] = useRecyclingState<
+    'checking' | 'idle' | 'loading' | 'loaded' | 'failed'
+  >(cached.isCached ? (cached.data ? 'loaded' : 'failed') : 'checking', [url])
+  const requestRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    if (getCachedLinkPreview(url).isCached) return
-
     let active = true
-    const interaction = InteractionManager.runAfterInteractions(() => {
-      void loadLinkPreview(url).then(result => {
+    requestRef.current?.abort()
+    requestRef.current = null
+
+    void getPersistedLinkPreview(url).then(
+      result => {
         if (!active) return
-        setPreview(result, true)
-        setSettled(true, true)
-      })
-    })
+        setPreview(result.data, true)
+        setStatus(result.isCached ? (result.data ? 'loaded' : 'failed') : 'idle', true)
+      },
+      error => {
+        if (!active) return
+        console.error('Failed to read saved link preview', error)
+        setPreview(null, true)
+        setStatus('idle', true)
+      }
+    )
 
     return () => {
       active = false
-      interaction.cancel()
+      requestRef.current?.abort()
+      requestRef.current = null
     }
-  }, [setPreview, setSettled, url])
+  }, [setPreview, setStatus, url])
 
-  const handlePress = useCallback(() => {
-    void Linking.openURL(url)
-  }, [url])
+  const handlePress = useCallback(async () => {
+    if (status === 'loaded') {
+      void Linking.openURL(url)
+      return
+    }
+    if (status === 'checking' || status === 'loading') return
+
+    const controller = new AbortController()
+    requestRef.current?.abort()
+    requestRef.current = controller
+    setStatus('loading', true)
+    try {
+      const result = await loadLinkPreview(url, {
+        signal: controller.signal,
+        force: status === 'failed'
+      })
+      if (controller.signal.aborted || requestRef.current !== controller) return
+      setPreview(result, true)
+      setStatus(result ? 'loaded' : 'failed', true)
+    } catch (error) {
+      if (controller.signal.aborted) return
+      console.error('Failed to load link preview', error)
+      setStatus('failed', true)
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null
+    }
+  }, [setPreview, setStatus, status, url])
 
   const domain = getDomain(url)
 
   return (
     <Pressable
-      onPress={handlePress}
+      accessibilityLabel={status === 'loaded' ? `Open ${domain}` : `Load preview from ${domain}`}
+      onPress={() => void handlePress()}
       className={`mt-1 mb-1 h-22 flex-row overflow-hidden rounded-lg ${
         isMine ? 'bg-wa-bubble-mine/80' : 'bg-wa-bubble-other/80'
       }`}
@@ -56,7 +93,7 @@ export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPrevie
           {preview?.siteName ?? domain}
         </Text>
         <Text className='text-wa-text-primary mt-0.5 text-[13px] font-medium' numberOfLines={2}>
-          {preview?.title ?? (settled ? domain : 'Loading preview…')}
+          {preview?.title ?? getStatusLabel(status, domain)}
         </Text>
         {preview?.description && (
           <Text className='text-wa-text-secondary mt-0.5 text-[11px]' numberOfLines={1}>
@@ -65,7 +102,7 @@ export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPrevie
         )}
       </View>
 
-      {preview?.image ? (
+      {status === 'loaded' && preview?.image ? (
         <Image
           source={{ uri: preview.image }}
           recyclingKey={`${url}-${preview.image}`}
@@ -73,13 +110,39 @@ export const LinkPreview = memo(function LinkPreview({ url, isMine }: LinkPrevie
           contentFit='cover'
         />
       ) : (
-        <View className='bg-black/10 h-22 w-22 items-center justify-center'>
-          <Ionicons name='link' size={22} color='#8696A0' />
+        <View className='h-22 w-22 items-center justify-center bg-black/10'>
+          {status === 'checking' || status === 'loading' ? (
+            <ActivityIndicator size='small' color='#00A884' />
+          ) : (
+            <Ionicons
+              name={status === 'idle' ? 'shield-checkmark-outline' : 'link'}
+              size={22}
+              color={status === 'idle' ? '#00A884' : '#8696A0'}
+            />
+          )}
         </View>
       )}
     </Pressable>
   )
 })
+
+function getStatusLabel(
+  status: 'checking' | 'idle' | 'loading' | 'loaded' | 'failed',
+  domain: string
+): string {
+  switch (status) {
+    case 'checking':
+      return 'Checking saved preview…'
+    case 'idle':
+      return 'Tap to load preview privately'
+    case 'loading':
+      return 'Loading preview…'
+    case 'failed':
+      return 'Preview unavailable · tap to retry'
+    default:
+      return domain
+  }
+}
 
 function getDomain(url: string): string {
   try {

@@ -45,7 +45,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 10
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 11
 
 const migrations: Migration[] = [
   {
@@ -224,6 +224,24 @@ const migrations: Migration[] = [
       if (!columns.some(column => column.name === 'mediaWaveform')) {
         await database.exec('ALTER TABLE messages ADD COLUMN mediaWaveform TEXT')
       }
+    }
+  },
+  {
+    version: 11,
+    async migrate(database) {
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS link_previews (
+          url TEXT PRIMARY KEY,
+          title TEXT,
+          description TEXT,
+          image TEXT,
+          siteName TEXT,
+          status TEXT NOT NULL,
+          expiresAt INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_link_previews_expiry ON link_previews(expiresAt);
+      `)
     }
   }
 ]
