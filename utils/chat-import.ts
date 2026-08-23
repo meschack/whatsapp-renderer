@@ -1,10 +1,9 @@
-import { File } from 'expo-file-system'
-
 import { deleteSavedChat, saveChatMetadata } from '@/store/chat-database'
 import { deleteMessages, getLastMessage } from '@/store/message-database'
 import { createChatImporter } from '@/utils/chat-import-workflow'
 import { findChatFile, scanForMedia } from '@/utils/file-scanner'
 import { parseChat } from '@/utils/parser'
+import { openFileTranscript } from '@/utils/transcript-stream'
 import {
   cleanupExtractedChat,
   cleanupTemporaryArchive,
@@ -21,8 +20,9 @@ export const importChat = createChatImporter({
 
     return { transcriptUri, mediaMap: scanForMedia(directoryUri) }
   },
-  readTranscript: transcriptUri => new File(transcriptUri).text(),
-  parseTranscript: ({ transcript, mediaMap, chatId }) => parseChat(transcript, mediaMap, chatId),
+  openTranscript: openFileTranscript,
+  parseTranscript: ({ openTranscript, mediaMap, chatId }) =>
+    parseChat(openTranscript, mediaMap, chatId),
   getLastMessage,
   saveChat: saveChatMetadata,
   deleteChat: deleteSavedChat,

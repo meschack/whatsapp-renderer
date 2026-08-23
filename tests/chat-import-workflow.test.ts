@@ -19,7 +19,9 @@ function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
       transcriptUri: 'file:///documents/whatsapp-chats/chat-42/_chat.txt',
       mediaMap: new Map([['photo.jpg', 'file:///documents/whatsapp-chats/chat-42/photo.jpg']])
     }),
-    readTranscript: async () => 'transcript',
+    openTranscript: async () => async function* () {
+      yield 'transcript'
+    },
     parseTranscript: async ({ chatId }) => {
       messageChats.add(chatId)
       return { participants: ['Me', 'Alice'], messageCount: 2 }
@@ -154,7 +156,7 @@ describe('chat import workflow', () => {
   it('attempts every rollback action even when one cleanup fails', async () => {
     const calls: string[] = []
     const harness = createHarness({
-      readTranscript: async () => {
+      openTranscript: async () => {
         throw new Error('cannot read transcript')
       },
       deleteChat: () => {

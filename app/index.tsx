@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { Alert, FlatList } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { Directory, File } from 'expo-file-system'
+import { Directory } from 'expo-file-system'
 import * as DocumentPicker from 'expo-document-picker'
 import { Ionicons } from '@expo/vector-icons'
 import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/src/tw'
@@ -12,6 +12,7 @@ import { hasMessages, deleteMessages, getMessageCount, getParticipants } from '@
 import { cleanupExtractedChat } from '@/utils/zip-extractor'
 import { scanForMedia, findChatFile } from '@/utils/file-scanner'
 import { parseChat } from '@/utils/parser'
+import { openFileTranscript } from '@/utils/transcript-stream'
 import { importChat } from '@/utils/chat-import'
 import type { ChatImportPhase } from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
@@ -124,9 +125,7 @@ export default function HomeScreen() {
             throw new Error('Chat file no longer found on disk.')
           }
 
-          const chatFile = new File(chatFileUri)
-          const chatContent = await chatFile.text()
-          parseChat(chatContent, mediaMap, chat.id, chat.myName)
+          await parseChat(openFileTranscript(chatFileUri), mediaMap, chat.id, chat.myName)
         }
 
         const messageCount = getMessageCount(chat.id)
