@@ -7,7 +7,8 @@ vi.mock('../store/archive-database', () => ({
   getArchiveDatabase: () => databaseState.database
 }))
 
-import { getInitialMessagePage, saveChatPosition } from '../store/message-database'
+import { getInitialMessagePage, saveChatPosition, searchMessages } from '../store/message-database'
+import { buildSearchExpression, parseHighlightedExcerpt } from '../utils/message-search'
 import { createThrottledWriter } from '../utils/throttled-writer'
 
 class TestMessageDatabase {
@@ -52,6 +53,24 @@ function createDatabase(): DatabaseSync {
       messageSequence INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     );
+    CREATE VIRTUAL TABLE messages_fts USING fts5(
+      text,
+      content='messages',
+      content_rowid='id',
+      tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, text)
+      VALUES ('delete', old.id, old.text);
+    END;
+    CREATE TRIGGER messages_fts_update AFTER UPDATE OF text ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, text)
+      VALUES ('delete', old.id, old.text);
+      INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text);
+    END;
   `)
   const insert = database.prepare(
     `INSERT INTO messages (chatId, sender, text, timestamp)
@@ -110,6 +129,15 @@ describe('chat position restoration', () => {
     expect(page.records.map(record => record.sequence)).toEqual([8, 9, 10, 11, 12])
     expect(page).toMatchObject({ restoredSequence: null, hasOlder: true, hasNewer: false })
   })
+
+  it('lets an explicit navigation target override the persisted position', async () => {
+    await saveChatPosition('chat-1', 11)
+
+    const page = await getInitialMessagePage('chat-1', 5, 4)
+
+    expect(page.records.map(record => record.sequence)).toEqual([2, 3, 4, 5, 6])
+    expect(page.restoredSequence).toBe(4)
+  })
 })
 
 describe('throttled position writer', () => {
@@ -149,5 +177,66 @@ describe('throttled position writer', () => {
     expect(write).toHaveBeenLastCalledWith(21)
     vi.runAllTimers()
     expect(write).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('message search', () => {
+  let sqlite: DatabaseSync
+
+  beforeEach(() => {
+    sqlite = createDatabase()
+    sqlite.exec(`
+      UPDATE messages SET text = 'Release checklist alpha' WHERE id = 4;
+      UPDATE messages SET text = 'Release checklist beta' WHERE id = 7;
+      UPDATE messages SET text = 'Release checklist gamma' WHERE id = 10;
+      INSERT INTO messages (chatId, sender, text, timestamp)
+      VALUES ('chat-2', 'Mallory', 'Release checklist from another chat', 13000);
+    `)
+    databaseState.database = new TestMessageDatabase(sqlite)
+  })
+
+  afterEach(() => {
+    databaseState.database = null
+    sqlite.close()
+  })
+
+  it('returns a bounded page with stable identity and highlighted excerpts', async () => {
+    const first = await searchMessages('chat-1', 'release check', 2, 0)
+    const second = await searchMessages('chat-1', 'release check', 2, first.nextCursor ?? 0)
+
+    expect(first.results).toHaveLength(2)
+    expect(first.hasMore).toBe(true)
+    expect(first.results[0]).toMatchObject({
+      messageId: 'msg-4',
+      sequence: 4,
+      sender: 'Alice',
+      timestamp: new Date(4_000)
+    })
+    expect(first.results[0].excerpt).toContain('\u0001Release\u0002')
+    expect(second.results.map(result => result.sequence)).toEqual([10])
+    expect(second.hasMore).toBe(false)
+  })
+
+  it('splits SQLite highlight markers into renderable segments', () => {
+    expect(parseHighlightedExcerpt('before \u0001needle\u0002 after')).toEqual([
+      { text: 'before ', highlighted: false },
+      { text: 'needle', highlighted: true },
+      { text: ' after', highlighted: false }
+    ])
+  })
+
+  it('keeps the index correct when searchable text changes or disappears', async () => {
+    expect((await searchMessages('chat-1', 'message 4', 10)).results).toEqual([])
+
+    sqlite.exec('DELETE FROM messages WHERE id = 7')
+    const afterDelete = await searchMessages('chat-1', 'release check', 10)
+
+    expect(afterDelete.results.map(result => result.sequence)).toEqual([4, 10])
+  })
+
+  it('turns punctuation and FTS operators into safe literal prefix terms', () => {
+    expect(buildSearchExpression('release OR "check-list"')).toBe(
+      '"release"* AND "OR"* AND "check"* AND "list"*'
+    )
   })
 })

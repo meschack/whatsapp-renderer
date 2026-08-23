@@ -1,5 +1,6 @@
 import type { MediaMap, Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
+import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/message-search'
 import { getArchiveDatabase } from './archive-database'
 
 /** Insert one bounded import batch without monopolizing the JavaScript thread. */
@@ -89,6 +90,20 @@ export interface InitialMessagePage {
   restoredSequence: number | null
 }
 
+export interface MessageSearchResult {
+  messageId: string
+  sequence: number
+  sender: string | null
+  timestamp: Date
+  excerpt: string
+}
+
+export interface MessageSearchPage {
+  results: MessageSearchResult[]
+  hasMore: boolean
+  nextCursor: number | null
+}
+
 const MESSAGE_PAGE_COLUMNS = `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
    mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
    timestamp, isEdited, isMine, isSystem`
@@ -126,13 +141,17 @@ export async function getLatestMessagePage(chatId: string, limit: number): Promi
  */
 export async function getInitialMessagePage(
   chatId: string,
-  limit: number
+  limit: number,
+  preferredSequence?: number
 ): Promise<InitialMessagePage> {
   const db = getArchiveDatabase()
-  const position = await db.getFirstAsync<{ messageSequence: number }>(
-    'SELECT messageSequence FROM chat_positions WHERE chatId = ?',
-    chatId
-  )
+  const position =
+    preferredSequence === undefined
+      ? await db.getFirstAsync<{ messageSequence: number }>(
+          'SELECT messageSequence FROM chat_positions WHERE chatId = ?',
+          chatId
+        )
+      : { messageSequence: preferredSequence }
 
   if (position) {
     const anchor = position.messageSequence
@@ -187,6 +206,51 @@ export async function getInitialMessagePage(
     hasOlder: latest.hasMore,
     hasNewer: false,
     restoredSequence: null
+  }
+}
+
+export async function searchMessages(
+  chatId: string,
+  query: string,
+  limit: number,
+  afterSequence = 0
+): Promise<MessageSearchPage> {
+  const expression = buildSearchExpression(query)
+  if (!expression || limit <= 0) return { results: [], hasMore: false, nextCursor: null }
+
+  const db = getArchiveDatabase()
+  const rows = await db.getAllAsync<{
+    id: number
+    sender: string | null
+    timestamp: number
+    excerpt: string
+  }>(
+    `SELECT m.id, m.sender, m.timestamp,
+            snippet(messages_fts, 0, ?, ?, ' … ', 18) AS excerpt
+     FROM messages_fts
+     JOIN messages AS m ON m.id = messages_fts.rowid
+     WHERE messages_fts MATCH ? AND m.chatId = ? AND m.id > ?
+     ORDER BY m.id ASC
+     LIMIT ?`,
+    HIGHLIGHT_START,
+    HIGHLIGHT_END,
+    expression,
+    chatId,
+    Math.max(0, afterSequence),
+    limit + 1
+  )
+  const pageRows = rows.slice(0, limit)
+
+  return {
+    results: pageRows.map(row => ({
+      messageId: `msg-${row.id}`,
+      sequence: row.id,
+      sender: row.sender,
+      timestamp: new Date(row.timestamp),
+      excerpt: row.excerpt
+    })),
+    hasMore: rows.length > limit,
+    nextCursor: pageRows.at(-1)?.id ?? null
   }
 }
 

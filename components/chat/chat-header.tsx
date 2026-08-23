@@ -6,9 +6,10 @@ import { View, Text, Pressable } from '@/src/tw'
 interface ChatHeaderProps {
   chatName: string
   participantCount: number
+  onSearchPress?: () => void
 }
 
-export function ChatHeader({ chatName, participantCount }: ChatHeaderProps) {
+export function ChatHeader({ chatName, participantCount, onSearchPress }: ChatHeaderProps) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
 
@@ -35,6 +36,15 @@ export function ChatHeader({ chatName, participantCount }: ChatHeaderProps) {
         </View>
 
         <View className='h-10 flex-row items-center rounded-full border border-white/5 bg-black/10 px-1'>
+          {onSearchPress && (
+            <Pressable
+              accessibilityLabel='Search messages'
+              className='size-9 items-center justify-center'
+              onPress={onSearchPress}
+            >
+              <Ionicons name='search-outline' size={22} color='#E9EDEF' />
+            </Pressable>
+          )}
           <Pressable className='size-9 items-center justify-center'>
             <Ionicons name='videocam-outline' size={23} color='#E9EDEF' />
           </Pressable>

@@ -13,9 +13,14 @@ const MAX_CHARS = 500
 interface ChatBubbleProps {
   message: Message
   showSender: boolean
+  highlighted?: boolean
 }
 
-export const ChatBubble = memo(function ChatBubble({ message, showSender }: ChatBubbleProps) {
+export const ChatBubble = memo(function ChatBubble({
+  message,
+  showSender,
+  highlighted = false
+}: ChatBubbleProps) {
   const isMine = message.isMine
   const hasMedia = message.mediaType !== null
   const hasText = message.text !== null && message.text.trim().length > 0
@@ -51,13 +56,23 @@ export const ChatBubble = memo(function ChatBubble({ message, showSender }: Chat
           audioRendersOwnMeta ? 'px-2.5 py-2' : hasMedia && !hasText ? 'p-1' : 'px-2.5 pt-1.5 pb-1',
           isMine ? 'bg-wa-bubble-mine' : 'bg-wa-bubble-other'
         )}
-        style={
+        style={[
           showSender
             ? isMine
               ? { borderTopRightRadius: 4 }
               : { borderTopLeftRadius: 4 }
+            : undefined,
+          highlighted
+            ? {
+                borderColor: '#00C896',
+                borderWidth: 2,
+                shadowColor: '#00A884',
+                shadowOpacity: 0.35,
+                shadowRadius: 5,
+                elevation: 4
+              }
             : undefined
-        }
+        ]}
       >
         {/* Media content */}
         {hasMedia && <MediaMessage message={message} />}

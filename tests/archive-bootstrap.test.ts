@@ -112,6 +112,27 @@ describe('archive bootstrap', () => {
         ['chat-1']
       )
     ).toEqual({ text: 'Corrected', isEdited: 1 })
+    expect(
+      await database.first<{ rowid: number }>(
+        "SELECT rowid FROM messages_fts WHERE messages_fts MATCH 'Corrected'"
+      )
+    ).toEqual({ rowid: 1 })
+
+    await database.run(
+      `INSERT INTO messages (chatId, sender, text, timestamp, isEdited, isMine, isSystem)
+       VALUES ('chat-1', 'Alice', 'Searchable later', 1787222800000, 0, 0, 0)`
+    )
+    expect(
+      await database.first<{ rowid: number }>(
+        "SELECT rowid FROM messages_fts WHERE messages_fts MATCH 'Searchable'"
+      )
+    ).toEqual({ rowid: 2 })
+    await database.run('DELETE FROM messages WHERE id = 2')
+    expect(
+      await database.first<{ rowid: number }>(
+        "SELECT rowid FROM messages_fts WHERE messages_fts MATCH 'Searchable'"
+      )
+    ).toBeNull()
 
     const reopened = await createArchiveBootstrap(async () => database)()
     expect(reopened).toMatchObject({

@@ -2,6 +2,7 @@ import { AudioPlayerProvider } from '@/components/chat/audio-player-provider'
 import { ChatBubble } from '@/components/chat/chat-bubble'
 import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
+import { ChatSearch } from '@/components/chat/chat-search'
 import { DateSeparator } from '@/components/chat/date-separator'
 import { SystemMessage } from '@/components/chat/system-message'
 import { useChatPerformance } from '@/hooks/use-chat-performance'
@@ -9,7 +10,7 @@ import { useMessagePages, type ListItem } from '@/hooks/use-message-pages'
 import { useTimelineBudget } from '@/hooks/use-timeline-budget'
 import { Pressable, Text, View } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
-import { saveChatPosition } from '@/store/message-database'
+import { saveChatPosition, type MessageSearchResult } from '@/store/message-database'
 import { formatDateLabel } from '@/utils/chat-timeline'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { Ionicons } from '@expo/vector-icons'
@@ -42,8 +43,12 @@ export default function ChatScreen() {
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [visibleDate, setVisibleDate] = useState<string | null>(null)
   const [showDateChip, setShowDateChip] = useState(false)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [jumpRequest, setJumpRequest] = useState<{ sequence: number; key: number } | null>(null)
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const lastScrollState = useRef(false)
   const hideDateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const benchmarkStarted = useRef(false)
   const { budget, profile } = useTimelineBudget()
   const { onPageLoad, onLoad, benchmarkEnabled, startBenchmark } = useChatPerformance(
@@ -64,6 +69,8 @@ export default function ChatScreen() {
   } = useMessagePages(chatData?.chatId ?? '', {
     pageSize: budget.pageSize,
     maxMessages: budget.maxMessages,
+    initialSequence: jumpRequest?.sequence,
+    initialRequestKey: jumpRequest?.key,
     onPageLoad
   })
 
@@ -95,24 +102,51 @@ export default function ChatScreen() {
     startBenchmark()
   }, [benchmarkEnabled, items.length, startBenchmark])
 
+  useEffect(() => {
+    if (isInitialLoading || !highlightedMessageId) return
+    if (clearHighlightTimer.current) clearTimeout(clearHighlightTimer.current)
+    clearHighlightTimer.current = setTimeout(() => setHighlightedMessageId(null), 2400)
+
+    return () => {
+      if (clearHighlightTimer.current) clearTimeout(clearHighlightTimer.current)
+      clearHighlightTimer.current = null
+    }
+  }, [highlightedMessageId, isInitialLoading])
+
   useEffect(
     () => () => {
       if (hideDateTimer.current) clearTimeout(hideDateTimer.current)
+      if (clearHighlightTimer.current) clearTimeout(clearHighlightTimer.current)
     },
     []
   )
 
-  const renderItem = useCallback(({ item }: { item: ListItem }) => {
-    if (item.type === 'date') {
-      return <DateSeparator date={item.date} />
-    }
+  const renderItem = useCallback(
+    ({ item }: { item: ListItem }) => {
+      if (item.type === 'date') {
+        return <DateSeparator date={item.date} />
+      }
 
-    if (item.message.isSystem) {
-      return <SystemMessage text={item.message.text} />
-    }
+      if (item.message.isSystem) {
+        return item.id === highlightedMessageId ? (
+          <View style={{ backgroundColor: 'rgba(0, 168, 132, 0.22)' }}>
+            <SystemMessage text={item.message.text} />
+          </View>
+        ) : (
+          <SystemMessage text={item.message.text} />
+        )
+      }
 
-    return <ChatBubble message={item.message} showSender={item.showSender} />
-  }, [])
+      return (
+        <ChatBubble
+          message={item.message}
+          showSender={item.showSender}
+          highlighted={item.id === highlightedMessageId}
+        />
+      )
+    },
+    [highlightedMessageId]
+  )
 
   const keyExtractor = useCallback((item: ListItem) => item.id, [])
 
@@ -179,6 +213,19 @@ export default function ChatScreen() {
     if (hasNewer && !isLoadingNewer) void loadNewer()
   }, [hasNewer, isLoadingNewer, loadNewer])
 
+  const handleSearchResult = useCallback(
+    (result: MessageSearchResult) => {
+      positionWriter.cancel()
+      void saveChatPosition(chatData?.chatId ?? '', result.sequence).catch(error => {
+        console.error('Failed to save the search destination', error)
+      })
+      setJumpRequest(current => ({ sequence: result.sequence, key: (current?.key ?? 0) + 1 }))
+      setHighlightedMessageId(result.messageId)
+      setIsSearchOpen(false)
+    },
+    [chatData?.chatId, positionWriter]
+  )
+
   if (!chatData) {
     return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }} />
   }
@@ -186,93 +233,109 @@ export default function ChatScreen() {
   return (
     <AudioPlayerProvider>
       <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
-        <ChatHeader chatName={chatData.chatName} participantCount={chatData.participants.length} />
+        <ChatHeader
+          chatName={chatData.chatName}
+          participantCount={chatData.participants.length}
+          onSearchPress={() => setIsSearchOpen(true)}
+        />
 
-        <ImageBackground
-          source={require('@/assets/images/wallpaper.jpeg')}
-          style={{ flex: 1 }}
-          resizeMode='cover'
-        >
-          {!isInitialLoading && (
-            <FlashList
-              ref={flashListRef}
-              data={items}
-              renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              getItemType={getItemType}
-              initialScrollIndex={initialScrollIndex}
-              initialScrollIndexParams={
-                initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
-              }
-              contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
-              maintainVisibleContentPosition={
-                initialScrollIndex === undefined
-                  ? MAINTAIN_BOTTOM_POSITION
-                  : MAINTAIN_RESTORED_POSITION
-              }
-              onScroll={handleScroll}
-              scrollEventThrottle={100}
-              onScrollBeginDrag={showVisibleDate}
-              onScrollEndDrag={hideVisibleDateSoon}
-              onMomentumScrollEnd={hideVisibleDateSoon}
-              onViewableItemsChanged={handleViewableItemsChanged}
-              onStartReached={handleStartReached}
-              onStartReachedThreshold={0.35}
-              onEndReached={handleEndReached}
-              onEndReachedThreshold={0.2}
-              onLoad={onLoad}
-              ListHeaderComponent={
-                isLoadingOlder ? (
-                  <View className='items-center py-4'>
-                    <ActivityIndicator size='small' color='#00A884' />
-                  </View>
-                ) : null
-              }
-              ListFooterComponent={
-                isLoadingNewer ? (
-                  <View className='items-center py-4'>
-                    <ActivityIndicator size='small' color='#00A884' />
-                  </View>
-                ) : null
-              }
-            />
-          )}
+        <View className='flex-1'>
+          <ImageBackground
+            source={require('@/assets/images/wallpaper.jpeg')}
+            style={{ flex: 1 }}
+            resizeMode='cover'
+          >
+            {!isInitialLoading && (
+              <FlashList
+                ref={flashListRef}
+                data={items}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                getItemType={getItemType}
+                initialScrollIndex={initialScrollIndex}
+                initialScrollIndexParams={
+                  initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
+                }
+                contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
+                maintainVisibleContentPosition={
+                  initialScrollIndex === undefined
+                    ? MAINTAIN_BOTTOM_POSITION
+                    : MAINTAIN_RESTORED_POSITION
+                }
+                onScroll={handleScroll}
+                scrollEventThrottle={100}
+                onScrollBeginDrag={showVisibleDate}
+                onScrollEndDrag={hideVisibleDateSoon}
+                onMomentumScrollEnd={hideVisibleDateSoon}
+                onViewableItemsChanged={handleViewableItemsChanged}
+                onStartReached={handleStartReached}
+                onStartReachedThreshold={0.35}
+                onEndReached={handleEndReached}
+                onEndReachedThreshold={0.2}
+                onLoad={onLoad}
+                ListHeaderComponent={
+                  isLoadingOlder ? (
+                    <View className='items-center py-4'>
+                      <ActivityIndicator size='small' color='#00A884' />
+                    </View>
+                  ) : null
+                }
+                ListFooterComponent={
+                  isLoadingNewer ? (
+                    <View className='items-center py-4'>
+                      <ActivityIndicator size='small' color='#00A884' />
+                    </View>
+                  ) : null
+                }
+              />
+            )}
 
-          {isInitialLoading && (
-            <View className='absolute inset-0 items-center justify-center'>
-              <ActivityIndicator size='small' color='#00A884' />
+            {isInitialLoading && (
+              <View className='absolute inset-0 items-center justify-center'>
+                <ActivityIndicator size='small' color='#00A884' />
+              </View>
+            )}
+
+            {showDateChip && visibleDate && (
+              <View
+                pointerEvents='none'
+                className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
+                style={{ elevation: 3 }}
+              >
+                <Text className='text-[11.5px] font-medium text-[#E9EDEF]'>{visibleDate}</Text>
+              </View>
+            )}
+
+            {showScrollButton && (
+              <Pressable
+                className='bg-wa-header absolute right-3.5 flex size-10 items-center justify-center rounded-full'
+                style={{
+                  bottom: 12,
+                  elevation: 4,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 3
+                }}
+                onPress={scrollToBottom}
+              >
+                <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
+              </Pressable>
+            )}
+          </ImageBackground>
+
+          <ChatComposer />
+
+          {isSearchOpen && (
+            <View className='absolute inset-0'>
+              <ChatSearch
+                chatId={chatData.chatId}
+                onClose={() => setIsSearchOpen(false)}
+                onSelect={handleSearchResult}
+              />
             </View>
           )}
-
-          {showDateChip && visibleDate && (
-            <View
-              pointerEvents='none'
-              className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
-              style={{ elevation: 3 }}
-            >
-              <Text className='text-[11.5px] font-medium text-[#E9EDEF]'>{visibleDate}</Text>
-            </View>
-          )}
-
-          {showScrollButton && (
-            <Pressable
-              className='bg-wa-header absolute right-3.5 flex size-10 items-center justify-center rounded-full'
-              style={{
-                bottom: 12,
-                elevation: 4,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
-                shadowRadius: 3
-              }}
-              onPress={scrollToBottom}
-            >
-              <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
-            </Pressable>
-          )}
-        </ImageBackground>
-
-        <ChatComposer />
+        </View>
       </SafeAreaView>
     </AudioPlayerProvider>
   )
