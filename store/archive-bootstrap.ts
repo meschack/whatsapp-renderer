@@ -45,7 +45,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 8
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 9
 
 const migrations: Migration[] = [
   {
@@ -207,6 +207,14 @@ const migrations: Migration[] = [
       if (!columns.some(column => column.name === 'importDiagnostics')) {
         await database.exec('ALTER TABLE saved_chats ADD COLUMN importDiagnostics TEXT')
       }
+    }
+  },
+  {
+    version: 9,
+    async migrate(database) {
+      await database.exec(
+        'CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chatId, timestamp)'
+      )
     }
   }
 ]
