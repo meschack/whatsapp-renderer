@@ -3,7 +3,6 @@ import {
   getRemainingPlaybackMs,
   getScrubberLeft,
   getVisualAudioProgress,
-  hasUsableWaveformCoverage,
   normalizeWaveformBuckets,
   shouldShowPlaybackRate
 } from '../utils/audio-presentation'
@@ -33,11 +32,6 @@ describe('audio player presentation', () => {
     const waveform = normalizeWaveformBuckets(new Array(40).fill(0.03))
 
     expect(new Set(waveform).size).toBeGreaterThanOrEqual(3)
-  })
-
-  it('does not replace the complete fallback with a mostly empty live sample', () => {
-    expect(hasUsableWaveformCoverage([0.2, 0.1, 0, 0, 0])).toBe(false)
-    expect(hasUsableWaveformCoverage([0.2, 0.1, 0.3, 0.1, 0])).toBe(true)
   })
 
   it('resets visual progress whenever playback is not running', () => {

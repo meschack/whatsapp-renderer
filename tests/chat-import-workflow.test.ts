@@ -41,7 +41,8 @@ function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
             width: 100,
             height: 80,
             duration: null,
-            previewUri: 'file:///documents/whatsapp-chats/chat-42/previews/0.jpg'
+            previewUri: 'file:///documents/whatsapp-chats/chat-42/previews/0.jpg',
+            waveform: null
           }
         ]
       ])
@@ -192,6 +193,7 @@ describe('chat import workflow', () => {
       mediaHeight: null,
       mediaDuration: null,
       mediaPreviewUri: null,
+      mediaWaveform: null,
       timestamp: new Date(),
       isEdited: false,
       isMine: false,

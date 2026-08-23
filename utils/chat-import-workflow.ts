@@ -56,7 +56,8 @@ export interface ChatImportDependencies {
   indexMedia: (
     candidates: MediaCandidate[],
     directoryUri: string,
-    onProgress: (progress: MediaIndexProgress) => void
+    onProgress: (progress: MediaIndexProgress) => void,
+    signal?: AbortSignal
   ) => Promise<MediaMap>
   openTranscript: (transcriptUri: string) => Awaitable<() => AsyncIterable<string>>
   parseTranscript: (input: {
@@ -158,7 +159,8 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
             phaseTotal: progress.total,
             currentItem: progress.filename
           })
-        }
+        },
+        request.signal
       )
       throwIfCancelled(request.signal)
 

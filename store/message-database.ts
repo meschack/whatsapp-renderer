@@ -1,5 +1,10 @@
 import type { MediaMap, Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
+import {
+  AUDIO_BAR_COUNT,
+  AUDIO_BAR_MAX_HEIGHT,
+  AUDIO_BAR_MIN_HEIGHT
+} from '../utils/audio-presentation'
 import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/message-search'
 import { extractFirstUrl } from '../utils/message-links'
 import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../utils/media-library'
@@ -15,8 +20,8 @@ export async function insertMessageBatchAsync(chatId: string, messages: Message[
       `INSERT INTO messages (
          chatId, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
          mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
-         timestamp, isEdited, isMine, isSystem
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         mediaWaveform, timestamp, isEdited, isMine, isSystem
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     try {
       for (const message of messages) {
@@ -32,6 +37,7 @@ export async function insertMessageBatchAsync(chatId: string, messages: Message[
           message.mediaHeight,
           message.mediaDuration,
           message.mediaPreviewUri,
+          message.mediaWaveform ? JSON.stringify(message.mediaWaveform) : null,
           message.timestamp.getTime(),
           message.isEdited ? 1 : 0,
           message.isMine ? 1 : 0,
@@ -56,6 +62,7 @@ interface MessageRow {
   mediaHeight: number | null
   mediaDuration: number | null
   mediaPreviewUri: string | null
+  mediaWaveform: string | null
   timestamp: number
   isEdited: number
   isMine: number
@@ -75,10 +82,25 @@ function rowToMessage(row: MessageRow): Message {
     mediaHeight: row.mediaHeight,
     mediaDuration: row.mediaDuration,
     mediaPreviewUri: row.mediaPreviewUri,
+    mediaWaveform: parseWaveform(row.mediaWaveform),
     timestamp: new Date(row.timestamp),
     isEdited: row.isEdited === 1,
     isMine: row.isMine === 1,
     isSystem: row.isSystem === 1
+  }
+}
+
+function parseWaveform(value: string | null): number[] | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed) || parsed.length !== AUDIO_BAR_COUNT) return null
+    if (!parsed.every(sample => typeof sample === 'number' && Number.isFinite(sample))) return null
+    return parsed.map(sample =>
+      Math.max(AUDIO_BAR_MIN_HEIGHT, Math.min(AUDIO_BAR_MAX_HEIGHT, sample))
+    )
+  } catch {
+    return null
   }
 }
 
@@ -265,7 +287,7 @@ export async function getNewerAttachmentPage(
 
 const MESSAGE_PAGE_COLUMNS = `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
    mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
-   timestamp, isEdited, isMine, isSystem`
+   mediaWaveform, timestamp, isEdited, isMine, isSystem`
 
 function rowsToPage(rows: MessageRow[], limit: number, newestFirst: boolean): MessagePage {
   const hasMore = rows.length > limit
@@ -607,7 +629,8 @@ export async function hasUnindexedMedia(chatId: string): Promise<boolean> {
   const db = getArchiveDatabase()
   const row = await db.getFirstAsync<{ id: number }>(
     `SELECT id FROM messages
-     WHERE chatId = ? AND mediaUri IS NOT NULL AND mediaFilename IS NULL
+     WHERE chatId = ? AND mediaUri IS NOT NULL
+       AND (mediaFilename IS NULL OR (mediaType = 'audio' AND mediaWaveform IS NULL))
      LIMIT 1`,
     chatId
   )
@@ -621,7 +644,7 @@ export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promi
     const statement = await transaction.prepareAsync(
       `UPDATE messages SET
          mediaType = ?, mediaFilename = ?, mediaSize = ?, mediaWidth = ?,
-         mediaHeight = ?, mediaDuration = ?, mediaPreviewUri = ?
+         mediaHeight = ?, mediaDuration = ?, mediaPreviewUri = ?, mediaWaveform = ?
        WHERE chatId = ? AND mediaUri = ?`
     )
     try {
@@ -634,6 +657,7 @@ export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promi
           attachment.height,
           attachment.duration,
           attachment.previewUri,
+          attachment.waveform ? JSON.stringify(attachment.waveform) : null,
           chatId,
           attachment.uri
         )
