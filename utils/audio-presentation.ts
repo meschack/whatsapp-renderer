@@ -1,6 +1,17 @@
 export const AUDIO_BAR_COUNT = 40
 export const AUDIO_BAR_MIN_HEIGHT = 3
 export const AUDIO_BAR_MAX_HEIGHT = 18
+export const PLAYBACK_RATES = [1, 1.5, 2] as const
+
+export function getSupportedPlaybackRate(value: number): (typeof PLAYBACK_RATES)[number] {
+  return PLAYBACK_RATES.find(rate => rate === value) ?? 1
+}
+
+export function getNextPlaybackRate(current: number): (typeof PLAYBACK_RATES)[number] {
+  const supported = getSupportedPlaybackRate(current)
+  const index = PLAYBACK_RATES.indexOf(supported)
+  return PLAYBACK_RATES[(index + 1) % PLAYBACK_RATES.length]
+}
 
 export function shouldShowPlaybackRate(state: { isActive: boolean; isPlaying: boolean }): boolean {
   return state.isActive && state.isPlaying

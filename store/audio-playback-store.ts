@@ -45,7 +45,7 @@ export class AudioPlaybackStore {
     }
   }
 
-  setActiveUri(uri: string | null): void {
+  setActiveUri(uri: string | null, playbackRate = 1): void {
     if (uri === this.activeUri) return
     const previousUri = this.activeUri
     this.activeUri = uri
@@ -68,7 +68,7 @@ export class AudioPlaybackStore {
         progress: 0,
         currentTime: 0,
         hasPlayed: false,
-        playbackRate: 1
+        playbackRate
       })
     }
   }
