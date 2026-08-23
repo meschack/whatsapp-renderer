@@ -123,6 +123,11 @@ describe('archive bootstrap', () => {
       )
     ).toEqual({ name: 'idx_messages_chat_timestamp' })
     expect(
+      await database.first<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'link_previews'"
+      )
+    ).toEqual({ name: 'link_previews' })
+    expect(
       await database.first<{ text: string; isEdited: number }>(
         'SELECT text, isEdited FROM messages WHERE chatId = ?',
         ['chat-1']
