@@ -16,6 +16,14 @@ interface MessageStart {
   rest: string
 }
 
+interface ChatScan {
+  participants: string[]
+  participantSet: Set<string>
+  senderCounts: Map<string, number>
+  dmyEvidence: number
+  mdyEvidence: number
+}
+
 export interface ParsedWhatsAppChat {
   participants: string[]
   messages: Message[]
@@ -85,22 +93,19 @@ function matchMessageStart(line: string): MessageStart | null {
   return null
 }
 
-function collectRawMessages(content: string): RawMessage[] {
-  const messages: RawMessage[] = []
-  let current: RawMessage | null = null
+class RawMessageAssembler {
+  private current: RawMessage | null = null
 
-  for (const line of content.split(/\r?\n/)) {
+  push(line: string): RawMessage | null {
     const start = matchMessageStart(line)
-
     if (!start) {
-      if (current) current.text += `\n${line}`
-      continue
+      if (this.current) this.current.text += `\n${line}`
+      return null
     }
 
-    if (current) messages.push(current)
-
+    const completed = this.current
     const senderMessage = start.rest.match(SENDER_MESSAGE_REGEX)
-    current = senderMessage
+    this.current = senderMessage
       ? {
           date: start.date,
           time: start.time,
@@ -108,23 +113,93 @@ function collectRawMessages(content: string): RawMessage[] {
           text: senderMessage[2]
         }
       : { date: start.date, time: start.time, sender: null, text: start.rest }
+    return completed
   }
 
-  if (current) messages.push(current)
-  return messages
+  finish(): RawMessage | null {
+    const completed = this.current
+    this.current = null
+    return completed
+  }
 }
 
-function inferDateOrder(messages: RawMessage[]): DateOrder {
-  let dmyEvidence = 0
-  let mdyEvidence = 0
+function* linesIn(content: string): Generator<string> {
+  let offset = 0
+  while (offset < content.length) {
+    const newline = content.indexOf('\n', offset)
+    if (newline === -1) {
+      yield content.slice(offset).replace(/\r$/, '')
+      return
+    }
 
-  for (const message of messages) {
-    const [first, second] = message.date.split('/').map(Number)
-    if (first > 12) dmyEvidence++
-    if (second > 12) mdyEvidence++
+    yield content.slice(offset, newline).replace(/\r$/, '')
+    offset = newline + 1
+  }
+}
+
+async function* linesInChunks(chunks: AsyncIterable<string>): AsyncGenerator<string> {
+  let pending = ''
+  for await (const chunk of chunks) {
+    pending += chunk
+    let newline = pending.indexOf('\n')
+    while (newline !== -1) {
+      yield pending.slice(0, newline).replace(/\r$/, '')
+      pending = pending.slice(newline + 1)
+      newline = pending.indexOf('\n')
+    }
   }
 
-  return dmyEvidence > mdyEvidence ? 'DMY' : 'MDY'
+  if (pending.length > 0) yield pending.replace(/\r$/, '')
+}
+
+function visitRawMessages(lines: Iterable<string>, visit: (message: RawMessage) => void): void {
+  const assembler = new RawMessageAssembler()
+  for (const line of lines) {
+    const completed = assembler.push(line)
+    if (completed) visit(completed)
+  }
+  const finalMessage = assembler.finish()
+  if (finalMessage) visit(finalMessage)
+}
+
+async function visitRawMessageChunks(
+  chunks: AsyncIterable<string>,
+  visit: (message: RawMessage) => void | Promise<void>
+): Promise<void> {
+  const assembler = new RawMessageAssembler()
+  for await (const line of linesInChunks(chunks)) {
+    const completed = assembler.push(line)
+    if (completed) await visit(completed)
+  }
+  const finalMessage = assembler.finish()
+  if (finalMessage) await visit(finalMessage)
+}
+
+function createChatScan(): ChatScan {
+  return {
+    participants: [],
+    participantSet: new Set(),
+    senderCounts: new Map(),
+    dmyEvidence: 0,
+    mdyEvidence: 0
+  }
+}
+
+function scanRawMessage(scan: ChatScan, message: RawMessage): void {
+  const [first, second] = message.date.split('/').map(Number)
+  if (first > 12) scan.dmyEvidence++
+  if (second > 12) scan.mdyEvidence++
+
+  if (!message.sender) return
+  if (!scan.participantSet.has(message.sender)) {
+    scan.participantSet.add(message.sender)
+    scan.participants.push(message.sender)
+  }
+  scan.senderCounts.set(message.sender, (scan.senderCounts.get(message.sender) ?? 0) + 1)
+}
+
+function inferDateOrder(scan: ChatScan): DateOrder {
+  return scan.dmyEvidence > scan.mdyEvidence ? 'DMY' : 'MDY'
 }
 
 function parseTimestamp(dateString: string, timeString: string, order: DateOrder): Date {
@@ -192,21 +267,43 @@ function detectMedia(text: string, mediaMap: MediaMap) {
   return { mediaType: null, mediaUri: null, cleanText: text }
 }
 
-function detectMyName(messages: RawMessage[], participants: string[], myName?: string): string | null {
+function detectMyName(scan: ChatScan, myName?: string): string | null {
   if (myName) return myName
-  if (participants.length !== 2) return null
+  if (scan.participants.length !== 2) return null
 
-  const counts = new Map<string, number>()
-  for (const message of messages) {
-    if (message.sender) counts.set(message.sender, (counts.get(message.sender) ?? 0) + 1)
-  }
-
-  return participants.reduce<string | null>((mostFrequent, participant) => {
+  return scan.participants.reduce<string | null>((mostFrequent, participant) => {
     if (!mostFrequent) return participant
-    return (counts.get(participant) ?? 0) > (counts.get(mostFrequent) ?? 0)
+    return (scan.senderCounts.get(participant) ?? 0) >
+      (scan.senderCounts.get(mostFrequent) ?? 0)
       ? participant
       : mostFrequent
   }, null)
+}
+
+function parseRawMessage(
+  raw: RawMessage,
+  index: number,
+  dateOrder: DateOrder,
+  detectedMyName: string | null,
+  mediaMap: MediaMap
+): Message | null {
+  const { cleanText: editedText, isEdited } = stripEditedMarker(raw.text)
+  const { mediaType, mediaUri, cleanText } = detectMedia(editedText ?? '', mediaMap)
+  const text = cleanText?.trim() ? cleanText : null
+
+  if (mediaType === 'image' && mediaUri === null && text === null) return null
+
+  return {
+    id: `msg-${index}`,
+    sender: raw.sender,
+    text,
+    mediaType,
+    mediaUri,
+    timestamp: parseTimestamp(raw.date, raw.time, dateOrder),
+    isEdited,
+    isMine: raw.sender === detectedMyName,
+    isSystem: raw.sender === null
+  }
 }
 
 export function visitWhatsAppChat(
@@ -215,36 +312,46 @@ export function visitWhatsAppChat(
   myName: string | undefined,
   visit: (message: Message) => void
 ): WhatsAppChatMetadata {
-  const rawMessages = collectRawMessages(content)
-  const participants = Array.from(
-    new Set(rawMessages.flatMap(message => (message.sender ? [message.sender] : [])))
-  )
-  const dateOrder = inferDateOrder(rawMessages)
-  const detectedMyName = detectMyName(rawMessages, participants, myName)
+  const scan = createChatScan()
+  visitRawMessages(linesIn(content), message => scanRawMessage(scan, message))
+
+  const dateOrder = inferDateOrder(scan)
+  const detectedMyName = detectMyName(scan, myName)
   let messageCount = 0
+  let rawIndex = 0
 
-  rawMessages.forEach((raw, index) => {
-    const { cleanText: editedText, isEdited } = stripEditedMarker(raw.text)
-    const { mediaType, mediaUri, cleanText } = detectMedia(editedText ?? '', mediaMap)
-    const text = cleanText?.trim() ? cleanText : null
-
-    if (mediaType === 'image' && mediaUri === null && text === null) return
-
-    visit({
-      id: `msg-${index}`,
-      sender: raw.sender,
-      text,
-      mediaType,
-      mediaUri,
-      timestamp: parseTimestamp(raw.date, raw.time, dateOrder),
-      isEdited,
-      isMine: raw.sender === detectedMyName,
-      isSystem: raw.sender === null
-    })
+  visitRawMessages(linesIn(content), raw => {
+    const message = parseRawMessage(raw, rawIndex++, dateOrder, detectedMyName, mediaMap)
+    if (!message) return
+    visit(message)
     messageCount++
   })
 
-  return { participants, messageCount }
+  return { participants: scan.participants, messageCount }
+}
+
+export async function visitWhatsAppChatStream(
+  openTranscript: () => AsyncIterable<string>,
+  mediaMap: MediaMap,
+  myName: string | undefined,
+  visit: (message: Message) => void | Promise<void>
+): Promise<WhatsAppChatMetadata> {
+  const scan = createChatScan()
+  await visitRawMessageChunks(openTranscript(), message => scanRawMessage(scan, message))
+
+  const dateOrder = inferDateOrder(scan)
+  const detectedMyName = detectMyName(scan, myName)
+  let messageCount = 0
+  let rawIndex = 0
+
+  await visitRawMessageChunks(openTranscript(), async raw => {
+    const message = parseRawMessage(raw, rawIndex++, dateOrder, detectedMyName, mediaMap)
+    if (!message) return
+    await visit(message)
+    messageCount++
+  })
+
+  return { participants: scan.participants, messageCount }
 }
 
 export function parseWhatsAppChat(

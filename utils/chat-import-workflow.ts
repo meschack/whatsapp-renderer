@@ -33,10 +33,10 @@ export interface ChatImportDependencies {
     transcriptUri: string
     mediaMap: MediaMap
   }>
-  readTranscript: (transcriptUri: string) => Promise<string>
+  openTranscript: (transcriptUri: string) => Awaitable<() => AsyncIterable<string>>
   parseTranscript: (input: {
     chatId: string
-    transcript: string
+    openTranscript: () => AsyncIterable<string>
     mediaMap: MediaMap
   }) => Awaitable<{ participants: string[]; messageCount: number }>
   getLastMessage: (chatId: string) => Awaitable<{ text: string | null; timestamp: number } | null>
@@ -83,11 +83,11 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
 
       completed = 2
       report('reading')
-      const transcript = await dependencies.readTranscript(transcriptUri)
+      const openTranscript = await dependencies.openTranscript(transcriptUri)
 
       completed = 3
       report('parsing')
-      const parsed = await dependencies.parseTranscript({ chatId, transcript, mediaMap })
+      const parsed = await dependencies.parseTranscript({ chatId, openTranscript, mediaMap })
       if (parsed.messageCount === 0) throw new Error('No messages found in the chat file.')
 
       completed = 4

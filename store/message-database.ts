@@ -2,34 +2,30 @@ import type { Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
 import { getArchiveDatabase } from './archive-database'
 
-/**
- * Batch insert messages into SQLite within a transaction.
- * Each message gets its chatId set. Insertion order = chronological order
- * so autoincrement id preserves message ordering.
- */
-export function insertMessageBatch(chatId: string, messages: Message[]): void {
+/** Insert one bounded import batch without monopolizing the JavaScript thread. */
+export async function insertMessageBatchAsync(chatId: string, messages: Message[]): Promise<void> {
   const db = getArchiveDatabase()
-  db.withTransactionSync(() => {
-    const stmt = db.prepareSync(
+  await db.withExclusiveTransactionAsync(async transaction => {
+    const statement = await transaction.prepareAsync(
       `INSERT INTO messages (chatId, sender, text, mediaType, mediaUri, timestamp, isEdited, isMine, isSystem)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     try {
-      for (const msg of messages) {
-        stmt.executeSync(
+      for (const message of messages) {
+        await statement.executeAsync(
           chatId,
-          msg.sender,
-          msg.text,
-          msg.mediaType,
-          msg.mediaUri,
-          msg.timestamp.getTime(),
-          msg.isEdited ? 1 : 0,
-          msg.isMine ? 1 : 0,
-          msg.isSystem ? 1 : 0
+          message.sender,
+          message.text,
+          message.mediaType,
+          message.mediaUri,
+          message.timestamp.getTime(),
+          message.isEdited ? 1 : 0,
+          message.isMine ? 1 : 0,
+          message.isSystem ? 1 : 0
         )
       }
     } finally {
-      stmt.finalizeSync()
+      await statement.finalizeAsync()
     }
   })
 }
