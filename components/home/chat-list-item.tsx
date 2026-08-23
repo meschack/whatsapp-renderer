@@ -1,6 +1,7 @@
 import { View, Text, Pressable } from '@/src/tw'
 import type { SavedChat } from '@/models/types'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
+import { Ionicons } from '@expo/vector-icons'
 
 interface ChatListItemProps {
   chat: SavedChat
@@ -50,10 +51,12 @@ export const ChatListItem = ({ chat, onPress, onLongPress }: ChatListItemProps) 
         </Text>
       </View>
 
-      {/* Timestamp */}
-      <Text className='text-wa-text-secondary mt-1 self-start text-xs'>
-        {formatRelativeTime(chat.lastMessageTime)}
-      </Text>
+      <View className='mt-1 items-end gap-1 self-start'>
+        <Text className='text-wa-text-secondary text-xs'>
+          {formatRelativeTime(chat.lastMessageTime)}
+        </Text>
+        {chat.isPinned ? <Ionicons name='pin' size={14} color='#8696A0' /> : null}
+      </View>
     </Pressable>
   )
 }

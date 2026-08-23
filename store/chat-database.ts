@@ -2,16 +2,23 @@ import type { SavedChat } from '@/models/types'
 import { parseImportDiagnostics } from '@/utils/import-diagnostics'
 import { getArchiveDatabase } from './archive-database'
 
-interface SavedChatDatabaseRow extends Omit<SavedChat, 'participants' | 'importDiagnostics'> {
+interface SavedChatDatabaseRow extends Omit<
+  SavedChat,
+  'participants' | 'importDiagnostics' | 'isPinned' | 'isArchived'
+> {
   participants: string
   importDiagnostics: string | null
+  isPinned: number
+  isArchived: number
 }
 
 function deserializeSavedChat(row: SavedChatDatabaseRow): SavedChat {
   return {
     ...row,
     participants: JSON.parse(row.participants) as string[],
-    importDiagnostics: parseImportDiagnostics(row.importDiagnostics)
+    importDiagnostics: parseImportDiagnostics(row.importDiagnostics),
+    isPinned: row.isPinned === 1,
+    isArchived: row.isArchived === 1
   }
 }
 
@@ -22,6 +29,27 @@ export const getAllSavedChats = (): SavedChat[] => {
   )
 
   return rows.map(deserializeSavedChat)
+}
+
+export const renameSavedChat = (id: string, chatName: string): void => {
+  getArchiveDatabase().runSync('UPDATE saved_chats SET chatName = ? WHERE id = ?', chatName, id)
+}
+
+export const setSavedChatPinned = (id: string, pinned: boolean, now = Date.now()): void => {
+  getArchiveDatabase().runSync(
+    'UPDATE saved_chats SET isPinned = ?, pinnedAt = ? WHERE id = ?',
+    pinned ? 1 : 0,
+    pinned ? now : null,
+    id
+  )
+}
+
+export const setSavedChatArchived = (id: string, archived: boolean): void => {
+  getArchiveDatabase().runSync(
+    'UPDATE saved_chats SET isArchived = ? WHERE id = ?',
+    archived ? 1 : 0,
+    id
+  )
 }
 
 export const saveChatMetadata = (chat: SavedChat): void => {

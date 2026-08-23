@@ -45,6 +45,9 @@ export interface SavedChat {
   importedAt: string
   archiveFingerprint?: string | null
   importDiagnostics?: ImportDiagnostics
+  isPinned?: boolean
+  isArchived?: boolean
+  pinnedAt?: number | null
 }
 
 export type ImportDiagnosticCategory =

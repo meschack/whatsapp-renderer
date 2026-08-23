@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { Alert, FlatList } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -7,7 +7,13 @@ import * as DocumentPicker from 'expo-document-picker'
 import { Ionicons } from '@expo/vector-icons'
 import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
-import { deleteSavedChat, deleteAllSavedChats } from '@/store/chat-database'
+import {
+  deleteSavedChat,
+  deleteAllSavedChats,
+  renameSavedChat,
+  setSavedChatArchived,
+  setSavedChatPinned
+} from '@/store/chat-database'
 import {
   applyMediaIndex,
   deleteMessages,
@@ -30,6 +36,8 @@ import {
 import { ChatListItem } from '@/components/home/chat-list-item'
 import type { MediaMap, SavedChat } from '@/models/types'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
+import { getChatLibrarySections } from '@/utils/chat-library'
+import { ChatActionsSheet } from '@/components/home/chat-actions-sheet'
 
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
@@ -50,7 +58,10 @@ export default function HomeScreen() {
     useChatStore()
   const [statusText, setStatusText] = useState('')
   const [isImporting, setIsImporting] = useState(false)
+  const [selectedChat, setSelectedChat] = useState<SavedChat | null>(null)
+  const [showingArchived, setShowingArchived] = useState(false)
   const importControllerRef = useRef<AbortController | null>(null)
+  const library = useMemo(() => getChatLibrarySections(savedChats), [savedChats])
 
   const chooseDuplicate = useCallback(
     (chat: SavedChat) =>
@@ -237,6 +248,7 @@ export default function HomeScreen() {
 
   const handleDeleteChat = useCallback(
     (chat: SavedChat) => {
+      setSelectedChat(null)
       Alert.alert('Delete Chat', `Remove "${chat.chatName}" from the list?`, [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -250,6 +262,33 @@ export default function HomeScreen() {
           }
         }
       ])
+    },
+    [refreshSavedChats]
+  )
+
+  const handleRenameChat = useCallback(
+    (chat: SavedChat, name: string) => {
+      renameSavedChat(chat.id, name)
+      setSelectedChat(null)
+      refreshSavedChats()
+    },
+    [refreshSavedChats]
+  )
+
+  const handleTogglePinned = useCallback(
+    (chat: SavedChat) => {
+      setSavedChatPinned(chat.id, !chat.isPinned)
+      setSelectedChat(null)
+      refreshSavedChats()
+    },
+    [refreshSavedChats]
+  )
+
+  const handleToggleArchived = useCallback(
+    (chat: SavedChat) => {
+      setSavedChatArchived(chat.id, !chat.isArchived)
+      setSelectedChat(null)
+      refreshSavedChats()
     },
     [refreshSavedChats]
   )
@@ -281,10 +320,10 @@ export default function HomeScreen() {
       <ChatListItem
         chat={item}
         onPress={() => handleOpenChat(item)}
-        onLongPress={() => handleDeleteChat(item)}
+        onLongPress={() => setSelectedChat(item)}
       />
     ),
-    [handleOpenChat, handleDeleteChat]
+    [handleOpenChat]
   )
 
   const chatKeyExtractor = useCallback((item: SavedChat) => item.id, [])
@@ -366,37 +405,92 @@ export default function HomeScreen() {
   return (
     <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
       <FlatList
-        data={savedChats}
+        data={showingArchived ? library.archived : library.active}
         keyExtractor={chatKeyExtractor}
         renderItem={renderChatItem}
         ItemSeparatorComponent={ListSeparator}
         contentContainerStyle={{ paddingBottom: insets.bottom + 88 }}
+        ListHeaderComponent={
+          showingArchived ? (
+            <View className='flex-row items-center border-b border-white/5 px-2 py-2'>
+              <Pressable
+                accessibilityLabel='Back to chats'
+                className='size-12 items-center justify-center rounded-full active:bg-white/10'
+                onPress={() => setShowingArchived(false)}
+              >
+                <Ionicons name='arrow-back' size={23} color='#E9EDEF' />
+              </Pressable>
+              <View className='ml-1'>
+                <Text className='text-[17px] font-medium text-[#E9EDEF]'>Archived chats</Text>
+                <Text className='text-[11px] text-[#8696A0]'>Long-press a chat to restore it</Text>
+              </View>
+            </View>
+          ) : library.archived.length > 0 ? (
+            <Pressable
+              accessibilityLabel={`Archived chats, ${library.archived.length}`}
+              className='min-h-14 flex-row items-center px-5 active:bg-white/5'
+              onPress={() => setShowingArchived(true)}
+            >
+              <View className='w-[52px] items-center'>
+                <Ionicons name='archive-outline' size={22} color='#00A884' />
+              </View>
+              <Text className='ml-3 flex-1 text-[15px] font-medium text-[#E9EDEF]'>Archived</Text>
+              <Text className='text-[13px] text-[#00A884]'>{library.archived.length}</Text>
+            </Pressable>
+          ) : null
+        }
+        ListEmptyComponent={
+          <View className='items-center px-8 py-20'>
+            <Ionicons
+              name={showingArchived ? 'archive-outline' : 'chatbubbles-outline'}
+              size={42}
+              color='#667781'
+            />
+            <Text className='mt-3 text-center text-[15px] text-[#8696A0]'>
+              {showingArchived ? 'No archived chats' : 'All your chats are archived'}
+            </Text>
+          </View>
+        }
         ListFooterComponent={
-          <Pressable
-            className='mt-2 flex-row items-center justify-center gap-2 py-4'
-            onPress={handleResetAll}
-          >
-            <Ionicons name='trash-outline' size={16} color='#FF6B6B' />
-            <Text className='text-wa-error text-sm'>Reset All Chats</Text>
-          </Pressable>
+          showingArchived ? null : (
+            <Pressable
+              className='mt-2 flex-row items-center justify-center gap-2 py-4'
+              onPress={handleResetAll}
+            >
+              <Ionicons name='trash-outline' size={16} color='#FF6B6B' />
+              <Text className='text-wa-error text-sm'>Reset All Chats</Text>
+            </Pressable>
+          )
         }
       />
 
       {/* FAB */}
-      <Pressable
-        className='bg-wa-accent absolute right-5 h-14 w-14 items-center justify-center rounded-full'
-        style={{
-          bottom: insets.bottom + 16,
-          elevation: 6,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 3 },
-          shadowOpacity: 0.3,
-          shadowRadius: 4
-        }}
-        onPress={handleImport}
-      >
-        <Ionicons name='add' size={28} color='#FFFFFF' />
-      </Pressable>
+      {!showingArchived && (
+        <Pressable
+          accessibilityLabel='Import chat archive'
+          className='bg-wa-accent absolute right-5 h-14 w-14 items-center justify-center rounded-full'
+          style={{
+            bottom: insets.bottom + 16,
+            elevation: 6,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4
+          }}
+          onPress={handleImport}
+        >
+          <Ionicons name='add' size={28} color='#FFFFFF' />
+        </Pressable>
+      )}
+
+      <ChatActionsSheet
+        chat={selectedChat}
+        onClose={() => setSelectedChat(null)}
+        onRename={name => selectedChat && handleRenameChat(selectedChat, name)}
+        onTogglePinned={() => selectedChat && handleTogglePinned(selectedChat)}
+        onToggleArchived={() => selectedChat && handleToggleArchived(selectedChat)}
+        onDelete={() => selectedChat && handleDeleteChat(selectedChat)}
+      />
     </SafeAreaView>
   )
 }
