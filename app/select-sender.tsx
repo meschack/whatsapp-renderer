@@ -45,7 +45,7 @@ export default function SelectSenderScreen() {
       messageCount: chatData.messageCount,
       lastMessageText: lastMsg?.text ?? null,
       lastMessageTime: lastMsg ? new Date(lastMsg.timestamp).toISOString() : new Date().toISOString(),
-      importedAt: new Date().toISOString()
+      importedAt: chatData.importedAt
     })
 
     refreshSavedChats()

@@ -8,6 +8,7 @@ export interface ChatData {
   myName: string
   extractDirUri: string
   messageCount: number
+  importedAt: string
 }
 
 export interface ChatStore {
