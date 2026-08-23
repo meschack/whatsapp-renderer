@@ -1,5 +1,6 @@
 import {
   formatPlaybackRate,
+  getNextPlaybackRate,
   getRemainingPlaybackMs,
   getScrubberLeft,
   getVisualAudioProgress,
@@ -17,6 +18,13 @@ describe('audio player presentation', () => {
 
   it('formats the three WhatsApp playback rates compactly', () => {
     expect([1, 1.5, 2].map(formatPlaybackRate)).toEqual(['1x', '1.5x', '2x'])
+  })
+
+  it('cycles only through supported persistent playback rates', () => {
+    expect(getNextPlaybackRate(1)).toBe(1.5)
+    expect(getNextPlaybackRate(1.5)).toBe(2)
+    expect(getNextPlaybackRate(2)).toBe(1)
+    expect(getNextPlaybackRate(99)).toBe(1.5)
   })
 
   it('stretches speech dynamics without inventing activity in empty buckets', () => {

@@ -57,4 +57,16 @@ describe('AudioPlaybackStore', () => {
       duration: 42
     })
   })
+
+  it('applies a preferred rate only to the newly active row', () => {
+    const store = new AudioPlaybackStore()
+    const unrelatedListener = vi.fn()
+    store.subscribe('other.opus', unrelatedListener)
+
+    store.setActiveUri('voice.opus', 1.5)
+
+    expect(store.getSnapshot('voice.opus').playbackRate).toBe(1.5)
+    expect(store.getSnapshot('other.opus').playbackRate).toBe(1)
+    expect(unrelatedListener).not.toHaveBeenCalled()
+  })
 })

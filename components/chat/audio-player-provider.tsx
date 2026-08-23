@@ -1,8 +1,11 @@
 import { audioPlaybackStore } from '@/store/audio-playback-store'
+import {
+  getPreferredAudioPlaybackRate,
+  setPreferredAudioPlaybackRate
+} from '@/store/preference-database'
+import { getNextPlaybackRate } from '@/utils/audio-presentation'
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
-
-const PLAYBACK_RATES = [1, 1.5, 2] as const
 
 interface AudioPlayerControls {
   play: (uri: string) => Promise<void>
@@ -21,7 +24,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   const activeUriRef = useRef<string | null>(null)
   const pendingPlayUriRef = useRef<string | null>(null)
-  const rateIndexRef = useRef(0)
+  const initialPlaybackRate = useMemo(getPreferredAudioPlaybackRate, [])
+  const preferredRateRef = useRef(initialPlaybackRate)
 
   useEffect(() => {
     const uri = activeUriRef.current
@@ -40,6 +44,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
     if (pendingPlayUriRef.current === uri && status.duration > 0 && !status.playing) {
       pendingPlayUriRef.current = null
+      player.setPlaybackRate(preferredRateRef.current)
       player.play()
     }
   }, [player, status.currentTime, status.duration, status.playing])
@@ -64,9 +69,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
       activeUriRef.current = uri
       pendingPlayUriRef.current = uri
-      rateIndexRef.current = 0
-      audioPlaybackStore.setActiveUri(uri)
+      const preferredRate = preferredRateRef.current
+      audioPlaybackStore.setActiveUri(uri, preferredRate)
       player.replace({ uri })
+      player.setPlaybackRate(preferredRate)
     },
     [player]
   )
@@ -82,11 +88,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   )
 
   const cycleRate = useCallback(() => {
-    const nextIndex = (rateIndexRef.current + 1) % PLAYBACK_RATES.length
-    rateIndexRef.current = nextIndex
-    const rate = PLAYBACK_RATES[nextIndex]
+    const rate = getNextPlaybackRate(preferredRateRef.current)
+    preferredRateRef.current = rate
     player.setPlaybackRate(rate)
     audioPlaybackStore.setPlaybackRate(rate)
+    setPreferredAudioPlaybackRate(rate)
   }, [player])
 
   useEffect(
