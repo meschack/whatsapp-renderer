@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseWhatsAppChat } from '../utils/whatsapp-chat-parser'
+import type { MediaAttachment } from '../models/types'
+
+function image(filename: string, uri: string): MediaAttachment {
+  return {
+    filename,
+    uri,
+    type: 'image',
+    size: 100,
+    width: 80,
+    height: 60,
+    duration: null,
+    previewUri: `${uri}.preview.jpg`
+  }
+}
 
 describe('parseWhatsAppChat', () => {
   it('parses French Android exports using DMY dates and localized attachments', () => {
@@ -14,8 +28,14 @@ describe('parseWhatsAppChat', () => {
       '05/06/2026, 08:05 - Alice: Corrigé <Ce message a été modifié>'
     ].join('\n')
     const media = new Map([
-      ['STK-20260605-WA0001.webp', 'file:///chat/STK-20260605-WA0001.webp'],
-      ['IMG-20260605-WA0002.jpg', 'file:///chat/IMG-20260605-WA0002.jpg']
+      [
+        'STK-20260605-WA0001.webp',
+        image('STK-20260605-WA0001.webp', 'file:///chat/STK-20260605-WA0001.webp')
+      ],
+      [
+        'IMG-20260605-WA0002.jpg',
+        image('IMG-20260605-WA0002.jpg', 'file:///chat/IMG-20260605-WA0002.jpg')
+      ]
     ])
 
     const result = parseWhatsAppChat(content, media, 'Alice')
@@ -33,6 +53,11 @@ describe('parseWhatsAppChat', () => {
     expect(result.messages[4]).toMatchObject({
       mediaType: 'image',
       mediaUri: 'file:///chat/IMG-20260605-WA0002.jpg',
+      mediaFilename: 'IMG-20260605-WA0002.jpg',
+      mediaSize: 100,
+      mediaWidth: 80,
+      mediaHeight: 60,
+      mediaPreviewUri: 'file:///chat/IMG-20260605-WA0002.jpg.preview.jpg',
       text: null
     })
     expect(result.messages[5]).toMatchObject({
@@ -61,7 +86,7 @@ describe('parseWhatsAppChat', () => {
       '13/05/2026, 08:00 - Alice: <Médias omis>',
       '13/05/2026, 08:01 - Bob: photo.jpg (fichier joint)'
     ].join('\n')
-    const media = new Map([['photo.jpg', 'file:///chat/photo.jpg']])
+    const media = new Map([['photo.jpg', image('photo.jpg', 'file:///chat/photo.jpg')]])
 
     const result = parseWhatsAppChat(content, media, 'Alice')
 

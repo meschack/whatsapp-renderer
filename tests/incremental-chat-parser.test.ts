@@ -53,7 +53,19 @@ describe('incremental chat parser', () => {
       chatId: 'chat-fr',
       openTranscript: chunkText(content, [1, 7, 2, 19, 3]),
       mediaMap: new Map([
-        ['IMG-20260605-WA0002.jpg', 'file:///chat/IMG-20260605-WA0002.jpg']
+        [
+          'IMG-20260605-WA0002.jpg',
+          {
+            filename: 'IMG-20260605-WA0002.jpg',
+            uri: 'file:///chat/IMG-20260605-WA0002.jpg',
+            type: 'image',
+            size: 100,
+            width: 80,
+            height: 60,
+            duration: null,
+            previewUri: 'file:///chat/previews/photo.jpg'
+          } as const
+        ]
       ]),
       myName: 'Alice'
     })

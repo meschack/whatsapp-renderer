@@ -17,8 +17,30 @@ function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
     extractArchive: async () => 'file:///documents/whatsapp-chats/chat-42',
     discoverArchive: async () => ({
       transcriptUri: 'file:///documents/whatsapp-chats/chat-42/_chat.txt',
-      mediaMap: new Map([['photo.jpg', 'file:///documents/whatsapp-chats/chat-42/photo.jpg']])
+      mediaCandidates: [
+        {
+          filename: 'photo.jpg',
+          uri: 'file:///documents/whatsapp-chats/chat-42/photo.jpg',
+          type: 'image',
+          size: 100
+        }
+      ]
     }),
+    indexMedia: async (candidates, _directoryUri, onProgress) => {
+      onProgress({ completed: 1, total: 1, filename: candidates[0].filename })
+      return new Map([
+        [
+          'photo.jpg',
+          {
+            ...candidates[0],
+            width: 100,
+            height: 80,
+            duration: null,
+            previewUri: 'file:///documents/whatsapp-chats/chat-42/previews/0.jpg'
+          }
+        ]
+      ])
+    },
     openTranscript: async () => async function* () {
       yield 'transcript'
     },
@@ -58,7 +80,14 @@ function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
 describe('chat import workflow', () => {
   it('reports measurable phases and creates one complete chat', async () => {
     const harness = createHarness()
-    const progress: Array<{ phase: ChatImportPhase; completed: number; total: number }> = []
+    const progress: Array<{
+      phase: ChatImportPhase
+      completed: number
+      total: number
+      phaseCompleted?: number
+      phaseTotal?: number
+      currentItem?: string
+    }> = []
 
     const result = await harness.importChat({
       temporaryArchiveUri: 'file:///cache/armel.zip',
@@ -82,12 +111,21 @@ describe('chat import workflow', () => {
     expect(harness.cleanedDirectories).toEqual([])
     expect(harness.cleanedArchives).toEqual(['file:///cache/armel.zip'])
     expect(progress).toEqual([
-      { phase: 'extracting', completed: 0, total: 5 },
-      { phase: 'discovering', completed: 1, total: 5 },
-      { phase: 'reading', completed: 2, total: 5 },
-      { phase: 'parsing', completed: 3, total: 5 },
-      { phase: 'persisting', completed: 4, total: 5 },
-      { phase: 'complete', completed: 5, total: 5 }
+      { phase: 'extracting', completed: 0, total: 6 },
+      { phase: 'discovering', completed: 1, total: 6 },
+      { phase: 'indexing-media', completed: 2, total: 6 },
+      {
+        phase: 'indexing-media',
+        completed: 2,
+        total: 6,
+        phaseCompleted: 1,
+        phaseTotal: 1,
+        currentItem: 'photo.jpg'
+      },
+      { phase: 'reading', completed: 3, total: 6 },
+      { phase: 'parsing', completed: 4, total: 6 },
+      { phase: 'persisting', completed: 5, total: 6 },
+      { phase: 'complete', completed: 6, total: 6 }
     ])
   })
 
@@ -101,6 +139,12 @@ describe('chat import workflow', () => {
       text: 'half written',
       mediaType: null,
       mediaUri: null,
+      mediaFilename: null,
+      mediaSize: null,
+      mediaWidth: null,
+      mediaHeight: null,
+      mediaDuration: null,
+      mediaPreviewUri: null,
       timestamp: new Date(),
       isEdited: false,
       isMine: false,

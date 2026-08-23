@@ -1,4 +1,4 @@
-import type { Message } from '@/models/types'
+import type { MediaMap, Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
 import { getArchiveDatabase } from './archive-database'
 
@@ -7,8 +7,11 @@ export async function insertMessageBatchAsync(chatId: string, messages: Message[
   const db = getArchiveDatabase()
   await db.withExclusiveTransactionAsync(async transaction => {
     const statement = await transaction.prepareAsync(
-      `INSERT INTO messages (chatId, sender, text, mediaType, mediaUri, timestamp, isEdited, isMine, isSystem)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (
+         chatId, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
+         mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
+         timestamp, isEdited, isMine, isSystem
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     try {
       for (const message of messages) {
@@ -18,6 +21,12 @@ export async function insertMessageBatchAsync(chatId: string, messages: Message[
           message.text,
           message.mediaType,
           message.mediaUri,
+          message.mediaFilename,
+          message.mediaSize,
+          message.mediaWidth,
+          message.mediaHeight,
+          message.mediaDuration,
+          message.mediaPreviewUri,
           message.timestamp.getTime(),
           message.isEdited ? 1 : 0,
           message.isMine ? 1 : 0,
@@ -36,6 +45,12 @@ interface MessageRow {
   text: string | null
   mediaType: string | null
   mediaUri: string | null
+  mediaFilename: string | null
+  mediaSize: number | null
+  mediaWidth: number | null
+  mediaHeight: number | null
+  mediaDuration: number | null
+  mediaPreviewUri: string | null
   timestamp: number
   isEdited: number
   isMine: number
@@ -49,6 +64,12 @@ function rowToMessage(row: MessageRow): Message {
     text: row.text,
     mediaType: row.mediaType as Message['mediaType'],
     mediaUri: row.mediaUri,
+    mediaFilename: row.mediaFilename,
+    mediaSize: row.mediaSize,
+    mediaWidth: row.mediaWidth,
+    mediaHeight: row.mediaHeight,
+    mediaDuration: row.mediaDuration,
+    mediaPreviewUri: row.mediaPreviewUri,
     timestamp: new Date(row.timestamp),
     isEdited: row.isEdited === 1,
     isMine: row.isMine === 1,
@@ -62,7 +83,9 @@ export interface MessagePage {
 }
 
 const MESSAGE_PAGE_COLUMNS =
-  'id, sender, text, mediaType, mediaUri, timestamp, isEdited, isMine, isSystem'
+  `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
+   mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
+   timestamp, isEdited, isMine, isSystem`
 
 function rowsToPage(rows: MessageRow[], limit: number, newestFirst: boolean): MessagePage {
   const hasMore = rows.length > limit
@@ -175,6 +198,47 @@ export function updateIsMine(chatId: string, senderName: string): void {
 export function deleteMessages(chatId: string): void {
   const db = getArchiveDatabase()
   db.runSync('DELETE FROM messages WHERE chatId = ?', chatId)
+}
+
+export async function hasUnindexedMedia(chatId: string): Promise<boolean> {
+  const db = getArchiveDatabase()
+  const row = await db.getFirstAsync<{ id: number }>(
+    `SELECT id FROM messages
+     WHERE chatId = ? AND mediaUri IS NOT NULL AND mediaFilename IS NULL
+     LIMIT 1`,
+    chatId
+  )
+  return row !== null
+}
+
+/** Lazily attach metadata to rows imported before media indexing existed. */
+export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promise<void> {
+  const db = getArchiveDatabase()
+  await db.withExclusiveTransactionAsync(async transaction => {
+    const statement = await transaction.prepareAsync(
+      `UPDATE messages SET
+         mediaType = ?, mediaFilename = ?, mediaSize = ?, mediaWidth = ?,
+         mediaHeight = ?, mediaDuration = ?, mediaPreviewUri = ?
+       WHERE chatId = ? AND mediaUri = ?`
+    )
+    try {
+      for (const attachment of mediaMap.values()) {
+        await statement.executeAsync(
+          attachment.type,
+          attachment.filename,
+          attachment.size,
+          attachment.width,
+          attachment.height,
+          attachment.duration,
+          attachment.previewUri,
+          chatId,
+          attachment.uri
+        )
+      }
+    } finally {
+      await statement.finalizeAsync()
+    }
+  })
 }
 
 /**

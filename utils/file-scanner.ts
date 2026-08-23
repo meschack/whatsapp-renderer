@@ -1,80 +1,46 @@
-import type { MediaMap } from '@/models/types'
 import { Directory, File } from 'expo-file-system'
 
-const MEDIA_EXTENSIONS = new Set([
-  'jpg',
-  'jpeg',
-  'png',
-  'gif',
-  'webp',
-  'mp4',
-  'mkv',
-  'avi',
-  'mov',
-  '3gp',
-  'opus',
-  'mp3',
-  'm4a',
-  'ogg',
-  'aac',
-  'pdf',
-  'doc',
-  'docx',
-  'xls',
-  'xlsx',
-  'ppt',
-  'pptx',
-  'vcf'
-])
+import type { MediaCandidate } from '@/utils/media-indexer'
+import { getMediaType, MEDIA_PREVIEW_DIRECTORY } from '@/utils/media-file'
 
-/**
- * Recursively scan a directory and build a map of filename → file URI
- * for all media files found.
- */
-export function scanForMedia(directoryUri: string): MediaMap {
-  const mediaMap: MediaMap = new Map()
-  scanDirectory(new Directory(directoryUri), mediaMap)
-  return mediaMap
+/** Recursively discover attachment files without decoding their contents. */
+export function scanForMedia(directoryUri: string): MediaCandidate[] {
+  const candidates: MediaCandidate[] = []
+  scanDirectory(new Directory(directoryUri), candidates)
+  return candidates
 }
 
-function scanDirectory(dir: Directory, mediaMap: MediaMap): void {
-  const entries = dir.list()
-
-  for (const entry of entries) {
+function scanDirectory(directory: Directory, candidates: MediaCandidate[]): void {
+  for (const entry of directory.list()) {
     if (entry instanceof Directory) {
-      scanDirectory(entry, mediaMap)
-    } else if (entry instanceof File) {
-      const ext = entry.extension?.replace('.', '').toLowerCase() ?? ''
-      if (MEDIA_EXTENSIONS.has(ext)) {
-        mediaMap.set(entry.name, entry.uri)
-      }
+      const directoryName = entry.uri.split('/').filter(Boolean).pop()
+      if (directoryName === MEDIA_PREVIEW_DIRECTORY) continue
+      scanDirectory(entry, candidates)
+      continue
     }
+    if (!(entry instanceof File) || /(?:^|_)chat\.txt$/i.test(entry.name)) continue
+
+    const type = getMediaType(entry.name)
+    if (!type) continue
+    candidates.push({ filename: entry.name, uri: entry.uri, type, size: entry.size })
   }
 }
 
-/**
- * Find the chat text file in the extracted directory.
- * WhatsApp exports it as _chat.txt or similar.
- */
+/** Find the transcript, preferring WhatsApp's conventional _chat.txt filename. */
 export function findChatFile(directoryUri: string): string | null {
-  const dir = new Directory(directoryUri)
-  const entries = dir.list()
+  const directory = new Directory(directoryUri)
+  const entries = directory.list()
 
-  // Look for _chat.txt first
   for (const entry of entries) {
     if (entry instanceof File && (entry.name === '_chat.txt' || entry.name.endsWith('_chat.txt'))) {
       return entry.uri
     }
   }
 
-  // Fallback: look for any .txt file
   for (const entry of entries) {
-    if (entry instanceof File && entry.name.endsWith('.txt')) {
-      return entry.uri
-    }
+    if (entry instanceof File && entry.name.endsWith('.txt')) return entry.uri
   }
 
-  // Check subdirectories
   for (const entry of entries) {
     if (entry instanceof Directory) {
       const found = findChatFile(entry.uri)

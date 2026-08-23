@@ -1,4 +1,5 @@
 import type { MediaMap, Message } from '../models/types'
+import { getMediaType } from './media-file'
 import { stripEditedMarker } from './message-text'
 
 type DateOrder = 'DMY' | 'MDY'
@@ -46,34 +47,6 @@ const MESSAGE_START_PATTERNS = [
 ]
 
 const SENDER_MESSAGE_REGEX = /^([^:]+?):\s([\s\S]*)$/
-
-const MEDIA_EXTENSIONS: Record<string, Message['mediaType']> = {
-  jpg: 'image',
-  jpeg: 'image',
-  png: 'image',
-  gif: 'image',
-  webp: 'image',
-  mp4: 'video',
-  mkv: 'video',
-  avi: 'video',
-  mov: 'video',
-  '3gp': 'video',
-  opus: 'audio',
-  mp3: 'audio',
-  m4a: 'audio',
-  ogg: 'audio',
-  aac: 'audio',
-  pdf: 'document',
-  doc: 'document',
-  docx: 'document',
-  xls: 'document',
-  xlsx: 'document',
-  ppt: 'document',
-  pptx: 'document',
-  txt: 'document',
-  zip: 'document',
-  vcf: 'document'
-}
 
 const MEDIA_FILENAME_REGEX =
   /\b[\w-]+\.(?:jpg|jpeg|png|gif|webp|mp4|mkv|avi|mov|3gp|opus|mp3|m4a|ogg|aac|pdf|doc|docx|xls|xlsx|ppt|pptx|vcf|zip)\b/gi
@@ -223,18 +196,45 @@ function parseTimestamp(dateString: string, timeString: string, order: DateOrder
 }
 
 function mediaForFilename(filename: string, mediaMap: MediaMap) {
-  const extension = filename.split('.').pop()?.toLowerCase() ?? ''
+  const attachment = mediaMap.get(filename)
   return {
-    mediaType: MEDIA_EXTENSIONS[extension] ?? 'document',
-    mediaUri: mediaMap.get(filename) ?? null
-  } satisfies Pick<Message, 'mediaType' | 'mediaUri'>
+    mediaType: attachment?.type ?? getMediaType(filename) ?? 'document',
+    mediaUri: attachment?.uri ?? null,
+    mediaFilename: attachment?.filename ?? filename,
+    mediaSize: attachment?.size ?? null,
+    mediaWidth: attachment?.width ?? null,
+    mediaHeight: attachment?.height ?? null,
+    mediaDuration: attachment?.duration ?? null,
+    mediaPreviewUri: attachment?.previewUri ?? null
+  } satisfies Pick<
+    Message,
+    | 'mediaType'
+    | 'mediaUri'
+    | 'mediaFilename'
+    | 'mediaSize'
+    | 'mediaWidth'
+    | 'mediaHeight'
+    | 'mediaDuration'
+    | 'mediaPreviewUri'
+  >
 }
+
+const EMPTY_MEDIA = {
+  mediaType: null,
+  mediaUri: null,
+  mediaFilename: null,
+  mediaSize: null,
+  mediaWidth: null,
+  mediaHeight: null,
+  mediaDuration: null,
+  mediaPreviewUri: null
+} as const
 
 function detectMedia(text: string, mediaMap: MediaMap) {
   const stripped = text.replace(INVISIBLE_CHARS, '').trim()
 
   if (OMITTED_MEDIA_PATTERNS.some(pattern => pattern.test(stripped))) {
-    return { mediaType: 'image' as const, mediaUri: null, cleanText: null }
+    return { ...EMPTY_MEDIA, mediaType: 'image' as const, cleanText: null }
   }
 
   const angleAttached = stripped.match(ATTACHED_ANGLE_REGEX)
@@ -245,8 +245,7 @@ function detectMedia(text: string, mediaMap: MediaMap) {
   const suffixAttached = stripped.match(ATTACHED_SUFFIX_REGEX)
   if (suffixAttached) {
     const filename = suffixAttached[1].trim()
-    const extension = filename.split('.').pop()?.toLowerCase() ?? ''
-    if (mediaMap.has(filename) || MEDIA_EXTENSIONS[extension]) {
+    if (mediaMap.has(filename) || getMediaType(filename)) {
       return { ...mediaForFilename(filename, mediaMap), cleanText: null }
     }
   }
@@ -264,7 +263,7 @@ function detectMedia(text: string, mediaMap: MediaMap) {
     }
   }
 
-  return { mediaType: null, mediaUri: null, cleanText: text }
+  return { ...EMPTY_MEDIA, cleanText: text }
 }
 
 function detectMyName(scan: ChatScan, myName?: string): string | null {
@@ -288,17 +287,16 @@ function parseRawMessage(
   mediaMap: MediaMap
 ): Message | null {
   const { cleanText: editedText, isEdited } = stripEditedMarker(raw.text)
-  const { mediaType, mediaUri, cleanText } = detectMedia(editedText ?? '', mediaMap)
+  const { cleanText, ...media } = detectMedia(editedText ?? '', mediaMap)
   const text = cleanText?.trim() ? cleanText : null
 
-  if (mediaType === 'image' && mediaUri === null && text === null) return null
+  if (media.mediaType === 'image' && media.mediaUri === null && text === null) return null
 
   return {
     id: `msg-${index}`,
     sender: raw.sender,
     text,
-    mediaType,
-    mediaUri,
+    ...media,
     timestamp: parseTimestamp(raw.date, raw.time, dateOrder),
     isEdited,
     isMine: raw.sender === detectedMyName,

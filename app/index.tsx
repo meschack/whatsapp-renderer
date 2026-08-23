@@ -8,19 +8,28 @@ import { Ionicons } from '@expo/vector-icons'
 import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
 import { deleteSavedChat, deleteAllSavedChats } from '@/store/chat-database'
-import { hasMessages, deleteMessages, getMessageCount, getParticipants } from '@/store/message-database'
+import {
+  applyMediaIndex,
+  deleteMessages,
+  getMessageCount,
+  getParticipants,
+  hasMessages,
+  hasUnindexedMedia
+} from '@/store/message-database'
 import { cleanupExtractedChat } from '@/utils/zip-extractor'
 import { scanForMedia, findChatFile } from '@/utils/file-scanner'
 import { parseChat } from '@/utils/parser'
+import { indexMedia } from '@/utils/media-index'
 import { openFileTranscript } from '@/utils/transcript-stream'
 import { importChat } from '@/utils/chat-import'
 import type { ChatImportPhase } from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
-import type { SavedChat } from '@/models/types'
+import type { MediaMap, SavedChat } from '@/models/types'
 
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
   discovering: 'Finding messages and media',
+  'indexing-media': 'Preparing media previews',
   reading: 'Reading transcript',
   parsing: 'Importing messages',
   persisting: 'Saving chat',
@@ -69,9 +78,13 @@ export default function HomeScreen() {
       const { chat } = await importChat({
         temporaryArchiveUri: pickedFile.uri,
         archiveName: pickedFile.name ?? 'Chat.zip',
-        onProgress: ({ phase, completed, total }) => {
+        onProgress: ({ phase, completed, total, phaseCompleted, phaseTotal }) => {
           const percentage = Math.round((completed / total) * 100)
-          setStatusText(`${IMPORT_STATUS_TEXT[phase]} · ${percentage}%`)
+          const itemProgress =
+            phaseCompleted !== undefined && phaseTotal !== undefined
+              ? ` · ${phaseCompleted}/${phaseTotal}`
+              : ` · ${percentage}%`
+          setStatusText(`${IMPORT_STATUS_TEXT[phase]}${itemProgress}`)
         }
       })
 
@@ -114,18 +127,40 @@ export default function HomeScreen() {
           throw new Error('Chat data was deleted from device. Removing from list.')
         }
 
-        // Check if messages are already in SQLite
-        if (!hasMessages(chat.id)) {
-          // Legacy migration: re-parse and insert into SQLite
+        const needsMessageMigration = !hasMessages(chat.id)
+        const needsMediaMigration = needsMessageMigration || (await hasUnindexedMedia(chat.id))
+        let mediaMap: MediaMap | null = null
+        if (needsMediaMigration) {
+          setStatusText('Preparing media previews...')
+          const mediaCandidates = scanForMedia(chat.extractDirUri)
+          mediaMap = await indexMedia(mediaCandidates, chat.extractDirUri, progress => {
+            setStatusText(`Preparing media previews · ${progress.completed}/${progress.total}`)
+          })
+
+          if (!needsMessageMigration) {
+            await applyMediaIndex(chat.id, mediaMap)
+          }
+        }
+
+        if (needsMessageMigration) {
           setStatusText('Migrating chat data...')
-          const mediaMap = scanForMedia(chat.extractDirUri)
           const chatFileUri = findChatFile(chat.extractDirUri)
 
           if (!chatFileUri) {
             throw new Error('Chat file no longer found on disk.')
           }
 
-          await parseChat(openFileTranscript(chatFileUri), mediaMap, chat.id, chat.myName)
+          try {
+            await parseChat(
+              openFileTranscript(chatFileUri),
+              mediaMap ?? new Map(),
+              chat.id,
+              chat.myName
+            )
+          } catch (error) {
+            deleteMessages(chat.id)
+            throw error
+          }
         }
 
         const messageCount = getMessageCount(chat.id)
