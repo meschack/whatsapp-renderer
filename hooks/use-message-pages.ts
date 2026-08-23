@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  getLatestMessagePage,
+  getInitialMessagePage,
   getNewerMessagePage,
   getOlderMessagePage,
+  type InitialMessagePage,
   type MessagePage
 } from '@/store/message-database'
 import {
@@ -18,13 +19,13 @@ const DEFAULT_PAGE_SIZE = 100
 const DEFAULT_MAX_MESSAGES = 600
 
 interface MessageRepository {
-  latest: (chatId: string, limit: number) => Promise<MessagePage>
+  initial: (chatId: string, limit: number) => Promise<InitialMessagePage>
   older: (chatId: string, beforeSequence: number, limit: number) => Promise<MessagePage>
   newer: (chatId: string, afterSequence: number, limit: number) => Promise<MessagePage>
 }
 
 const messageRepository: MessageRepository = {
-  latest: getLatestMessagePage,
+  initial: getInitialMessagePage,
   older: getOlderMessagePage,
   newer: getNewerMessagePage
 }
@@ -49,6 +50,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const [isLoadingNewer, setIsLoadingNewer] = useState(false)
+  const [restoredSequence, setRestoredSequence] = useState<number | null>(null)
 
   const recordsRef = useRef<TimelineRecord[]>([])
   const hasOlderRef = useRef(false)
@@ -82,6 +84,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
     setHasNewer(false)
     setIsLoadingOlder(false)
     setIsLoadingNewer(false)
+    setRestoredSequence(null)
 
     if (!chatId) {
       setIsInitialLoading(false)
@@ -91,12 +94,13 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
     setIsInitialLoading(true)
     const startedAt = performance.now()
 
-    void repository.latest(chatId, pageSize).then(
+    void repository.initial(chatId, pageSize).then(
       page => {
         if (generationRef.current !== generation) return
         replaceRecords(page.records)
-        replaceHasOlder(page.hasMore)
-        replaceHasNewer(false)
+        replaceHasOlder(page.hasOlder)
+        replaceHasNewer(page.hasNewer)
+        setRestoredSequence(page.restoredSequence)
         onPageLoadRef.current?.({
           direction: 'initial',
           durationMs: performance.now() - startedAt
@@ -135,12 +139,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
         return
       }
 
-      const merged = mergeTimelineWindow(
-        recordsRef.current,
-        page.records,
-        'older',
-        maxMessages
-      )
+      const merged = mergeTimelineWindow(recordsRef.current, page.records, 'older', maxMessages)
       replaceRecords(merged.records)
       replaceHasOlder(page.hasMore)
       if (merged.trimmedNewer) replaceHasNewer(true)
@@ -178,12 +177,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
         return
       }
 
-      const merged = mergeTimelineWindow(
-        recordsRef.current,
-        page.records,
-        'newer',
-        maxMessages
-      )
+      const merged = mergeTimelineWindow(recordsRef.current, page.records, 'newer', maxMessages)
       replaceRecords(merged.records)
       replaceHasNewer(page.hasMore)
       if (merged.trimmedOlder) replaceHasOlder(true)
@@ -211,6 +205,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
     hasNewer,
     isInitialLoading,
     isLoadingOlder,
-    isLoadingNewer
+    isLoadingNewer,
+    restoredSequence
   }
 }

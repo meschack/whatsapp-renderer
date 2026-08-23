@@ -82,8 +82,14 @@ export interface MessagePage {
   hasMore: boolean
 }
 
-const MESSAGE_PAGE_COLUMNS =
-  `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
+export interface InitialMessagePage {
+  records: TimelineRecord[]
+  hasOlder: boolean
+  hasNewer: boolean
+  restoredSequence: number | null
+}
+
+const MESSAGE_PAGE_COLUMNS = `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
    mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
    timestamp, isEdited, isMine, isSystem`
 
@@ -112,6 +118,92 @@ export async function getLatestMessagePage(chatId: string, limit: number): Promi
   )
 
   return rowsToPage(rows, limit, true)
+}
+
+/**
+ * Open directly around the last visible message. This is deliberately one initial
+ * repository operation so the UI never renders the newest edge before restoration.
+ */
+export async function getInitialMessagePage(
+  chatId: string,
+  limit: number
+): Promise<InitialMessagePage> {
+  const db = getArchiveDatabase()
+  const position = await db.getFirstAsync<{ messageSequence: number }>(
+    'SELECT messageSequence FROM chat_positions WHERE chatId = ?',
+    chatId
+  )
+
+  if (position) {
+    const anchor = position.messageSequence
+    const [beforeRows, anchorAndAfterRows] = await Promise.all([
+      db.getAllAsync<MessageRow>(
+        `SELECT ${MESSAGE_PAGE_COLUMNS}
+         FROM messages
+         WHERE chatId = ? AND id < ?
+         ORDER BY id DESC
+         LIMIT ?`,
+        chatId,
+        anchor,
+        limit + 1
+      ),
+      db.getAllAsync<MessageRow>(
+        `SELECT ${MESSAGE_PAGE_COLUMNS}
+         FROM messages
+         WHERE chatId = ? AND id >= ?
+         ORDER BY id ASC
+         LIMIT ?`,
+        chatId,
+        anchor,
+        limit + 1
+      )
+    ])
+
+    if (anchorAndAfterRows[0]?.id === anchor) {
+      let beforeCount = Math.min(beforeRows.length, Math.floor(limit / 2))
+      let afterCount = Math.min(anchorAndAfterRows.length, limit - beforeCount)
+
+      // Fill from the opposite side when the anchor is close to either edge.
+      beforeCount = Math.min(beforeRows.length, limit - afterCount)
+      afterCount = Math.min(anchorAndAfterRows.length, limit - beforeCount)
+
+      const rows = [
+        ...beforeRows.slice(0, beforeCount).reverse(),
+        ...anchorAndAfterRows.slice(0, afterCount)
+      ]
+
+      return {
+        records: rows.map(row => ({ sequence: row.id, message: rowToMessage(row) })),
+        hasOlder: beforeRows.length > beforeCount,
+        hasNewer: anchorAndAfterRows.length > afterCount,
+        restoredSequence: anchor
+      }
+    }
+  }
+
+  const latest = await getLatestMessagePage(chatId, limit)
+  return {
+    records: latest.records,
+    hasOlder: latest.hasMore,
+    hasNewer: false,
+    restoredSequence: null
+  }
+}
+
+export async function saveChatPosition(chatId: string, messageSequence: number): Promise<void> {
+  if (!chatId || !Number.isSafeInteger(messageSequence) || messageSequence <= 0) return
+
+  const db = getArchiveDatabase()
+  await db.runAsync(
+    `INSERT INTO chat_positions (chatId, messageSequence, updatedAt)
+     VALUES (?, ?, ?)
+     ON CONFLICT(chatId) DO UPDATE SET
+       messageSequence = excluded.messageSequence,
+       updatedAt = excluded.updatedAt`,
+    chatId,
+    messageSequence,
+    Date.now()
+  )
 }
 
 /** Load history using a stable keyset cursor instead of an increasingly expensive OFFSET. */
@@ -197,7 +289,10 @@ export function updateIsMine(chatId: string, senderName: string): void {
  */
 export function deleteMessages(chatId: string): void {
   const db = getArchiveDatabase()
-  db.runSync('DELETE FROM messages WHERE chatId = ?', chatId)
+  db.withTransactionSync(() => {
+    db.runSync('DELETE FROM messages WHERE chatId = ?', chatId)
+    db.runSync('DELETE FROM chat_positions WHERE chatId = ?', chatId)
+  })
 }
 
 export async function hasUnindexedMedia(chatId: string): Promise<boolean> {

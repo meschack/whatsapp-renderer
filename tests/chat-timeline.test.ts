@@ -43,6 +43,9 @@ describe('buildTimelineItems', () => {
 
     expect(ids).toEqual(['date-2026-08-21', 'msg-1', 'msg-2', 'date-2026-08-22', 'msg-3', 'msg-4'])
     expect(new Set(ids).size).toBe(ids.length)
+    expect(items.filter(item => item.type === 'message').map(item => item.sequence)).toEqual([
+      1, 2, 3, 4
+    ])
   })
 
   it('recomputes sender grouping across page boundaries', () => {

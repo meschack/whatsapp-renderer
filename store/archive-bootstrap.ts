@@ -42,7 +42,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 3
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 4
 
 const migrations: Migration[] = [
   {
@@ -127,6 +127,18 @@ const migrations: Migration[] = [
       await database.exec(
         'CREATE INDEX IF NOT EXISTS idx_messages_media ON messages(chatId, mediaType, id)'
       )
+    }
+  },
+  {
+    version: 4,
+    async migrate(database) {
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS chat_positions (
+          chatId TEXT PRIMARY KEY,
+          messageSequence INTEGER NOT NULL,
+          updatedAt INTEGER NOT NULL
+        );
+      `)
     }
   }
 ]

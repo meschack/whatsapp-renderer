@@ -88,7 +88,9 @@ describe('archive bootstrap', () => {
       user_version: LATEST_ARCHIVE_SCHEMA_VERSION
     })
     expect(
-      (await database.all<{ name: string }>('PRAGMA table_info(messages)')).map(column => column.name)
+      (await database.all<{ name: string }>('PRAGMA table_info(messages)')).map(
+        column => column.name
+      )
     ).toEqual(
       expect.arrayContaining([
         'mediaFilename',
@@ -99,6 +101,11 @@ describe('archive bootstrap', () => {
         'mediaPreviewUri'
       ])
     )
+    expect(
+      await database.first<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'chat_positions'"
+      )
+    ).toEqual({ name: 'chat_positions' })
     expect(
       await database.first<{ text: string; isEdited: number }>(
         'SELECT text, isEdited FROM messages WHERE chatId = ?',
