@@ -4,7 +4,7 @@
     "slug": "whatsapp-renderer",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon-v2.png",
     "scheme": "whatsapprenderer",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -14,19 +14,23 @@
     "android": {
       "versionCode": 3,
       "predictiveBackGestureEnabled": false,
-      "package": "com.godwingbewezoun.whatsapprenderer"
+      "package": "com.godwingbewezoun.whatsapprenderer",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon-v2.png",
+        "backgroundColor": "#06101C"
+      }
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/icon-v2.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#06101C",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#06101C"
           }
         }
       ],

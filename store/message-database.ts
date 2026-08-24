@@ -11,43 +11,11 @@ import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../util
 import type { BookmarkCursor, BookmarkPage, BookmarkRecord } from '../utils/bookmarks'
 import { getLocalDayBounds, type ChatDateTarget, type ChatDay } from '../utils/chat-calendar'
 import { getArchiveDatabase } from './archive-database'
+import { insertMessageBatchIntoDatabaseAsync } from './message-batch-writer'
 
 /** Insert one bounded import batch without monopolizing the JavaScript thread. */
 export async function insertMessageBatchAsync(chatId: string, messages: Message[]): Promise<void> {
-  const db = getArchiveDatabase()
-  await db.withExclusiveTransactionAsync(async transaction => {
-    const statement = await transaction.prepareAsync(
-      `INSERT INTO messages (
-         chatId, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
-         mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
-         mediaWaveform, timestamp, isEdited, isMine, isSystem
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    try {
-      for (const message of messages) {
-        await statement.executeAsync(
-          chatId,
-          message.sender,
-          message.text,
-          message.mediaType,
-          message.mediaUri,
-          message.mediaFilename,
-          message.mediaSize,
-          message.mediaWidth,
-          message.mediaHeight,
-          message.mediaDuration,
-          message.mediaPreviewUri,
-          serializeWaveform(message.mediaType, message.mediaWaveform),
-          message.timestamp.getTime(),
-          message.isEdited ? 1 : 0,
-          message.isMine ? 1 : 0,
-          message.isSystem ? 1 : 0
-        )
-      }
-    } finally {
-      await statement.finalizeAsync()
-    }
-  })
+  await insertMessageBatchIntoDatabaseAsync(getArchiveDatabase(), chatId, messages)
 }
 
 interface MessageRow {
@@ -683,8 +651,8 @@ export async function applyMediaAttachmentIndex(
 /** Lazily attach metadata to rows imported before media indexing existed. */
 export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promise<void> {
   const db = getArchiveDatabase()
-  await db.withExclusiveTransactionAsync(async transaction => {
-    const statement = await transaction.prepareAsync(
+  await db.withTransactionAsync(async () => {
+    const statement = await db.prepareAsync(
       `UPDATE messages SET
          mediaType = ?, mediaFilename = ?, mediaSize = ?, mediaWidth = ?,
          mediaHeight = ?, mediaDuration = ?, mediaPreviewUri = ?, mediaWaveform = ?
