@@ -15,12 +15,12 @@ import {
   setSavedChatPinned
 } from '@/store/chat-database'
 import {
-  applyMediaIndex,
+  applyMediaAttachmentIndex,
   deleteMessages,
+  getUnindexedMediaUris,
   getMessageCount,
   getParticipants,
-  hasMessages,
-  hasUnindexedMedia
+  hasMessages
 } from '@/store/message-database'
 import { cleanupExtractedChat } from '@/utils/zip-extractor'
 import { scanForMedia, findChatFile } from '@/utils/file-scanner'
@@ -182,18 +182,27 @@ export default function HomeScreen() {
         }
 
         const needsMessageMigration = !hasMessages(chat.id)
-        const needsMediaMigration = needsMessageMigration || (await hasUnindexedMedia(chat.id))
+        const unindexedMediaUris = needsMessageMigration
+          ? null
+          : await getUnindexedMediaUris(chat.id)
+        const needsMediaMigration = needsMessageMigration || Boolean(unindexedMediaUris?.size)
         let mediaMap: MediaMap | null = null
         if (needsMediaMigration) {
           setStatusText('Preparing media previews...')
-          const mediaCandidates = scanForMedia(chat.extractDirUri)
-          mediaMap = await indexMedia(mediaCandidates, chat.extractDirUri, progress => {
-            setStatusText(`Preparing media previews · ${progress.completed}/${progress.total}`)
-          })
-
-          if (!needsMessageMigration) {
-            await applyMediaIndex(chat.id, mediaMap)
-          }
+          const mediaCandidates = scanForMedia(chat.extractDirUri).filter(
+            candidate => !unindexedMediaUris || unindexedMediaUris.has(candidate.uri)
+          )
+          mediaMap = await indexMedia(
+            mediaCandidates,
+            chat.extractDirUri,
+            progress => {
+              setStatusText(`Preparing media previews · ${progress.completed}/${progress.total}`)
+            },
+            undefined,
+            needsMessageMigration
+              ? undefined
+              : attachment => applyMediaAttachmentIndex(chat.id, attachment)
+          )
         }
 
         if (needsMessageMigration) {

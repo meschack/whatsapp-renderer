@@ -1,4 +1,4 @@
-import type { MediaMap, Message } from '@/models/types'
+import type { MediaAttachment, MediaMap, Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
 import {
   AUDIO_BAR_COUNT,
@@ -37,7 +37,7 @@ export async function insertMessageBatchAsync(chatId: string, messages: Message[
           message.mediaHeight,
           message.mediaDuration,
           message.mediaPreviewUri,
-          message.mediaWaveform ? JSON.stringify(message.mediaWaveform) : null,
+          serializeWaveform(message.mediaType, message.mediaWaveform),
           message.timestamp.getTime(),
           message.isEdited ? 1 : 0,
           message.isMine ? 1 : 0,
@@ -102,6 +102,14 @@ function parseWaveform(value: string | null): number[] | null {
   } catch {
     return null
   }
+}
+
+function serializeWaveform(
+  mediaType: Message['mediaType'],
+  waveform: number[] | null
+): string | null {
+  if (mediaType === 'audio') return JSON.stringify(waveform ?? [])
+  return waveform ? JSON.stringify(waveform) : null
 }
 
 export interface MessagePage {
@@ -637,6 +645,41 @@ export async function hasUnindexedMedia(chatId: string): Promise<boolean> {
   return row !== null
 }
 
+export async function getUnindexedMediaUris(chatId: string): Promise<Set<string>> {
+  const db = getArchiveDatabase()
+  const rows = await db.getAllAsync<{ mediaUri: string }>(
+    `SELECT DISTINCT mediaUri FROM messages
+     WHERE chatId = ? AND mediaUri IS NOT NULL
+       AND (mediaFilename IS NULL OR (mediaType = 'audio' AND mediaWaveform IS NULL))`,
+    chatId
+  )
+  return new Set(rows.map(row => row.mediaUri))
+}
+
+/** Persist one inspection immediately so interrupted legacy indexing can resume. */
+export async function applyMediaAttachmentIndex(
+  chatId: string,
+  attachment: MediaAttachment
+): Promise<void> {
+  const db = getArchiveDatabase()
+  await db.runAsync(
+    `UPDATE messages SET
+       mediaType = ?, mediaFilename = ?, mediaSize = ?, mediaWidth = ?,
+       mediaHeight = ?, mediaDuration = ?, mediaPreviewUri = ?, mediaWaveform = ?
+     WHERE chatId = ? AND mediaUri = ?`,
+    attachment.type,
+    attachment.filename,
+    attachment.size,
+    attachment.width,
+    attachment.height,
+    attachment.duration,
+    attachment.previewUri,
+    serializeWaveform(attachment.type, attachment.waveform),
+    chatId,
+    attachment.uri
+  )
+}
+
 /** Lazily attach metadata to rows imported before media indexing existed. */
 export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promise<void> {
   const db = getArchiveDatabase()
@@ -657,7 +700,7 @@ export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promi
           attachment.height,
           attachment.duration,
           attachment.previewUri,
-          attachment.waveform ? JSON.stringify(attachment.waveform) : null,
+          serializeWaveform(attachment.type, attachment.waveform),
           chatId,
           attachment.uri
         )

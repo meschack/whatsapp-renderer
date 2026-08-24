@@ -49,7 +49,8 @@ export function createMediaIndexer(dependencies: MediaIndexerDependencies) {
   return async function indexMedia(
     candidates: MediaCandidate[],
     onProgress?: (progress: MediaIndexProgress) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onIndexed?: (attachment: MediaAttachment) => void | Promise<void>
   ): Promise<MediaMap> {
     const mediaMap: MediaMap = new Map()
 
@@ -67,6 +68,7 @@ export function createMediaIndexer(dependencies: MediaIndexerDependencies) {
 
       const attachment: MediaAttachment = { ...candidate, ...inspection }
       mediaMap.set(candidate.filename, attachment)
+      await onIndexed?.(attachment)
       onProgress?.({ completed: index + 1, total: candidates.length, filename: candidate.filename })
       await dependencies.yieldToMainThread()
     }

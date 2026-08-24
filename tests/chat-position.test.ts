@@ -8,9 +8,11 @@ vi.mock('../store/archive-database', () => ({
 }))
 
 import {
+  applyMediaAttachmentIndex,
   getInitialMessagePage,
   findFirstMessageOnLocalDay,
   getChatDays,
+  getUnindexedMediaUris,
   hasUnindexedMedia,
   getBookmarkPage,
   getNewerAttachmentPage,
@@ -165,7 +167,7 @@ describe('chat position restoration', () => {
     )
   })
 
-  it('re-indexes legacy audio rows until their persisted waveform exists', async () => {
+  it('treats an attempted legacy audio inspection as complete when no waveform is available', async () => {
     sqlite
       .prepare(
         `UPDATE messages
@@ -175,10 +177,25 @@ describe('chat position restoration', () => {
       .run()
 
     await expect(hasUnindexedMedia('chat-1')).resolves.toBe(true)
-    sqlite
-      .prepare('UPDATE messages SET mediaWaveform = ? WHERE id = 3')
-      .run(JSON.stringify(new Array(40).fill(8)))
+    await expect(getUnindexedMediaUris('chat-1')).resolves.toEqual(
+      new Set(['file:///voice.opus'])
+    )
+
+    await applyMediaAttachmentIndex('chat-1', {
+      filename: 'voice.opus',
+      uri: 'file:///voice.opus',
+      type: 'audio',
+      size: 42_000,
+      width: null,
+      height: null,
+      duration: null,
+      previewUri: null,
+      waveform: null
+    })
+
     await expect(hasUnindexedMedia('chat-1')).resolves.toBe(false)
+    await expect(getUnindexedMediaUris('chat-1')).resolves.toEqual(new Set())
+    expect((await getInitialMessagePage('chat-1', 12)).records[2].message.mediaWaveform).toBeNull()
   })
 
   it('indexes local conversation days and resolves the first message on a selected day', async () => {

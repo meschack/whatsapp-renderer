@@ -7,6 +7,8 @@ import { createVideoPlayer } from 'expo-video'
 import { readImageDimensions } from '@/utils/image-dimensions'
 import { deriveAudioWaveform, MAX_WAVEFORM_BYTES } from '@/utils/audio-waveform'
 import { MEDIA_PREVIEW_DIRECTORY } from '@/utils/media-file'
+import { getMediaPreviewFilename } from '@/utils/media-preview'
+import type { MediaAttachment } from '@/models/types'
 import {
   createMediaIndexer,
   type MediaCandidate,
@@ -25,9 +27,9 @@ function throwIfAborted(signal?: AbortSignal): void {
   throw error
 }
 
-function persistPreview(cacheUri: string, previewDirectory: Directory, index: number): string {
+function persistPreview(cacheUri: string, previewDirectory: Directory, sourceUri: string): string {
   const source = new File(cacheUri)
-  const destination = new File(previewDirectory, `preview-${index}.jpg`)
+  const destination = new File(previewDirectory, getMediaPreviewFilename(sourceUri))
   if (destination.exists) destination.delete()
   source.move(destination)
   return destination.uri
@@ -64,7 +66,7 @@ async function createImagePreview(
     return {
       ...dimensions,
       duration: null,
-      previewUri: persistPreview(saved.uri, previewDirectory, index),
+      previewUri: persistPreview(saved.uri, previewDirectory, candidate.uri),
       waveform: null
     }
   } finally {
@@ -100,7 +102,7 @@ async function createVideoPreview(
       width: track?.size.width ?? thumbnail.width,
       height: track?.size.height ?? thumbnail.height,
       duration: player.duration > 0 ? player.duration : null,
-      previewUri: persistPreview(saved.uri, previewDirectory, index),
+      previewUri: persistPreview(saved.uri, previewDirectory, candidate.uri),
       waveform: null
     }
   } finally {
@@ -199,7 +201,8 @@ export function indexMedia(
   candidates: MediaCandidate[],
   directoryUri: string,
   onProgress?: (progress: MediaIndexProgress) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onIndexed?: (attachment: MediaAttachment) => void | Promise<void>
 ) {
-  return createNativeMediaIndexer(directoryUri)(candidates, onProgress, signal)
+  return createNativeMediaIndexer(directoryUri)(candidates, onProgress, signal, onIndexed)
 }
