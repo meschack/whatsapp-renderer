@@ -43,7 +43,8 @@ const INVISIBLE_CHARS = /[\u200e\u200f\u200b\u200c\u200d\ufeff\u202a-\u202e\u206
 const INVISIBLE_PREFIX =
   '[\\u200e\\u200f\\u200b\\u200c\\u200d\\ufeff\\u202a-\\u202e\\u2066-\\u2069]*'
 const DATE = '(\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})'
-const TIME = '(\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AP]M)?)'
+const FRENCH_DAY_PERIOD = 'matin|midi|apr[èe]s[-‐‑‒–—\\s]midi|soir|nuit'
+const TIME = `(\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*(?:[AP]M|${FRENCH_DAY_PERIOD}))?)`
 
 const MESSAGE_START_PATTERNS = [
   new RegExp(`^${INVISIBLE_PREFIX}\\[${DATE},\\s*${TIME}\\]\\s*(.+)$`, 'i'),
@@ -206,16 +207,29 @@ function parseTimestamp(dateString: string, timeString: string, order: DateOrder
   const day = order === 'DMY' ? first : second
   const month = order === 'DMY' ? second : first
 
-  const isPm = /PM$/i.test(timeString)
-  const isAm = /AM$/i.test(timeString)
-  const [rawHours, minutes, seconds = 0] = timeString
-    .replace(/\s*(AM|PM)$/i, '')
-    .split(':')
-    .map(Number)
+  const normalizedTime = timeString
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[-‐‑‒–—\s]+/g, ' ')
+    .trim()
+    .toLowerCase()
+  const timeParts = normalizedTime.match(
+    /^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s+(am|pm|matin|midi|apres midi|soir|nuit))?$/
+  )
+  if (!timeParts) return null
+
+  const rawHours = Number(timeParts[1])
+  const minutes = Number(timeParts[2])
+  const seconds = Number(timeParts[3] ?? 0)
+  const dayPeriod = timeParts[4] ?? null
 
   let hours = rawHours
-  if (isPm && hours !== 12) hours += 12
-  if (isAm && hours === 12) hours = 0
+  if ((dayPeriod === 'pm' || dayPeriod === 'apres midi' || dayPeriod === 'soir') && hours !== 12) {
+    hours += 12
+  }
+  if ((dayPeriod === 'am' || dayPeriod === 'matin' || dayPeriod === 'nuit') && hours === 12) {
+    hours = 0
+  }
 
   const timestamp = new Date(year, month - 1, day, hours, minutes, seconds)
   const isValid =

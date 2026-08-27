@@ -16,7 +16,15 @@ export function parseChat(
   mediaMap: MediaMap,
   chatId: string,
   myName?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  skipMessageCount?: number
 ) {
-  return parseIncrementally({ chatId, openTranscript, mediaMap, myName, signal })
+  return parseIncrementally({
+    chatId,
+    openTranscript,
+    mediaMap,
+    myName,
+    signal,
+    skipMessageCount
+  })
 }

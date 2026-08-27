@@ -48,7 +48,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 14
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 15
 
 const migrations: Migration[] = [
   {
@@ -290,6 +290,22 @@ const migrations: Migration[] = [
           textScale REAL NOT NULL DEFAULT 1,
           FOREIGN KEY(chatId) REFERENCES saved_chats(id) ON DELETE CASCADE
         );
+      `)
+    }
+  },
+  {
+    version: 15,
+    async migrate(database) {
+      await database.exec(`
+        CREATE TABLE IF NOT EXISTS chat_sources (
+          chatId TEXT NOT NULL,
+          directoryUri TEXT NOT NULL,
+          importedAt TEXT NOT NULL,
+          PRIMARY KEY(chatId, directoryUri),
+          FOREIGN KEY(chatId) REFERENCES saved_chats(id) ON DELETE CASCADE
+        );
+        INSERT OR IGNORE INTO chat_sources (chatId, directoryUri, importedAt)
+        SELECT id, extractDirUri, importedAt FROM saved_chats;
       `)
     }
   }

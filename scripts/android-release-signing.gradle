@@ -1,0 +1,24 @@
+gradle.afterProject { project, state ->
+    if (project.path != ':app' || state.failure != null) return
+
+    def signingValues = [
+        storeFile: System.getenv('ANDROID_KEYSTORE_PATH'),
+        storePassword: System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+        keyAlias: System.getenv('ANDROID_KEY_ALIAS'),
+        keyPassword: System.getenv('ANDROID_KEY_PASSWORD')
+    ]
+    def missing = signingValues.findAll { _, value -> !value }.keySet()
+    if (!missing.isEmpty()) {
+        throw new GradleException("Missing Android release signing values: ${missing.join(', ')}")
+    }
+
+    def android = project.extensions.getByName('android')
+    def releaseSigning = android.signingConfigs.findByName('ciRelease')
+        ?: android.signingConfigs.create('ciRelease')
+
+    releaseSigning.storeFile = project.file(signingValues.storeFile)
+    releaseSigning.storePassword = signingValues.storePassword
+    releaseSigning.keyAlias = signingValues.keyAlias
+    releaseSigning.keyPassword = signingValues.keyPassword
+    android.buildTypes.getByName('release').signingConfig = releaseSigning
+}

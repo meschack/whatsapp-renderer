@@ -11,43 +11,11 @@ import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../util
 import type { BookmarkCursor, BookmarkPage, BookmarkRecord } from '../utils/bookmarks'
 import { getLocalDayBounds, type ChatDateTarget, type ChatDay } from '../utils/chat-calendar'
 import { getArchiveDatabase } from './archive-database'
+import { insertMessageBatchIntoDatabaseAsync } from './message-batch-writer'
 
 /** Insert one bounded import batch without monopolizing the JavaScript thread. */
 export async function insertMessageBatchAsync(chatId: string, messages: Message[]): Promise<void> {
-  const db = getArchiveDatabase()
-  await db.withExclusiveTransactionAsync(async transaction => {
-    const statement = await transaction.prepareAsync(
-      `INSERT INTO messages (
-         chatId, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,
-         mediaWidth, mediaHeight, mediaDuration, mediaPreviewUri,
-         mediaWaveform, timestamp, isEdited, isMine, isSystem
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    try {
-      for (const message of messages) {
-        await statement.executeAsync(
-          chatId,
-          message.sender,
-          message.text,
-          message.mediaType,
-          message.mediaUri,
-          message.mediaFilename,
-          message.mediaSize,
-          message.mediaWidth,
-          message.mediaHeight,
-          message.mediaDuration,
-          message.mediaPreviewUri,
-          serializeWaveform(message.mediaType, message.mediaWaveform),
-          message.timestamp.getTime(),
-          message.isEdited ? 1 : 0,
-          message.isMine ? 1 : 0,
-          message.isSystem ? 1 : 0
-        )
-      }
-    } finally {
-      await statement.finalizeAsync()
-    }
-  })
+  await insertMessageBatchIntoDatabaseAsync(getArchiveDatabase(), chatId, messages)
 }
 
 interface MessageRow {
@@ -586,6 +554,40 @@ export async function getNewerMessagePage(
 }
 
 /**
+ * Resolve the immediate chronological successor of a voice message.
+ * A later voice message is deliberately not returned when any other message sits between them.
+ */
+export async function getNextConsecutiveAudioUri(
+  chatId: string,
+  currentUri: string
+): Promise<string | null> {
+  if (!chatId || !currentUri) return null
+
+  const row = await getArchiveDatabase().getFirstAsync<{
+    mediaType: string | null
+    mediaUri: string | null
+  }>(
+    `SELECT mediaType, mediaUri
+     FROM messages
+     WHERE chatId = ?
+       AND id > (
+         SELECT id
+         FROM messages
+         WHERE chatId = ? AND mediaUri = ?
+         ORDER BY id DESC
+         LIMIT 1
+       )
+     ORDER BY id ASC
+     LIMIT 1`,
+    chatId,
+    chatId,
+    currentUri
+  )
+
+  return row?.mediaType === 'audio' && row.mediaUri ? row.mediaUri : null
+}
+
+/**
  * Get total message count for a chat.
  */
 export function getMessageCount(chatId: string): number {
@@ -595,6 +597,21 @@ export function getMessageCount(chatId: string): number {
     chatId
   )
   return row?.count ?? 0
+}
+
+/** Return a small chronological tail used to prove continuity with a later export. */
+export function getRecentMessages(chatId: string, limit: number): Message[] {
+  if (!Number.isInteger(limit) || limit < 1) return []
+  const rows = getArchiveDatabase().getAllSync<MessageRow>(
+    `SELECT ${MESSAGE_PAGE_COLUMNS}
+     FROM messages
+     WHERE chatId = ?
+     ORDER BY id DESC
+     LIMIT ?`,
+    chatId,
+    limit
+  )
+  return rows.reverse().map(rowToMessage)
 }
 
 /**
@@ -683,8 +700,8 @@ export async function applyMediaAttachmentIndex(
 /** Lazily attach metadata to rows imported before media indexing existed. */
 export async function applyMediaIndex(chatId: string, mediaMap: MediaMap): Promise<void> {
   const db = getArchiveDatabase()
-  await db.withExclusiveTransactionAsync(async transaction => {
-    const statement = await transaction.prepareAsync(
+  await db.withTransactionAsync(async () => {
+    const statement = await db.prepareAsync(
       `UPDATE messages SET
          mediaType = ?, mediaFilename = ?, mediaSize = ?, mediaWidth = ?,
          mediaHeight = ?, mediaDuration = ?, mediaPreviewUri = ?, mediaWaveform = ?

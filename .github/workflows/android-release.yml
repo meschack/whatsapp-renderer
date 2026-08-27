@@ -1,0 +1,131 @@
+name: Android release builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify project
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+  build:
+    name: Build ${{ matrix.artifact }}
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact: android-armeabi-v7a
+            architectures: armeabi-v7a
+            task: assembleRelease
+            extension: apk
+            output: android/app/build/outputs/apk/release/app-release.apk
+          - artifact: android-arm64-v8a
+            architectures: arm64-v8a
+            task: assembleRelease
+            extension: apk
+            output: android/app/build/outputs/apk/release/app-release.apk
+          - artifact: android-universal-arm
+            architectures: armeabi-v7a,arm64-v8a
+            task: assembleRelease
+            extension: apk
+            output: android/app/build/outputs/apk/release/app-release.apk
+          - artifact: android-play-store
+            architectures: armeabi-v7a,arm64-v8a
+            task: bundleRelease
+            extension: aab
+            output: android/app/build/outputs/bundle/release/app-release.aab
+
+    env:
+      NODE_ENV: production
+      ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.jks
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Restore release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+
+      - name: Build signed release
+        working-directory: android
+        run: ./gradlew -I ../scripts/android-release-signing.gradle :app:${{ matrix.task }} -PreactNativeArchitectures=${{ matrix.architectures }} --no-daemon
+
+      - name: Collect artifact
+        run: |
+          mkdir -p release-artifact
+          cp "${{ matrix.output }}" "release-artifact/${{ matrix.artifact }}.${{ matrix.extension }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-artifact/${{ matrix.artifact }}.${{ matrix.extension }}
+          if-no-files-found: error
+          retention-days: 30
