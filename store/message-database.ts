@@ -554,6 +554,40 @@ export async function getNewerMessagePage(
 }
 
 /**
+ * Resolve the immediate chronological successor of a voice message.
+ * A later voice message is deliberately not returned when any other message sits between them.
+ */
+export async function getNextConsecutiveAudioUri(
+  chatId: string,
+  currentUri: string
+): Promise<string | null> {
+  if (!chatId || !currentUri) return null
+
+  const row = await getArchiveDatabase().getFirstAsync<{
+    mediaType: string | null
+    mediaUri: string | null
+  }>(
+    `SELECT mediaType, mediaUri
+     FROM messages
+     WHERE chatId = ?
+       AND id > (
+         SELECT id
+         FROM messages
+         WHERE chatId = ? AND mediaUri = ?
+         ORDER BY id DESC
+         LIMIT 1
+       )
+     ORDER BY id ASC
+     LIMIT 1`,
+    chatId,
+    chatId,
+    currentUri
+  )
+
+  return row?.mediaType === 'audio' && row.mediaUri ? row.mediaUri : null
+}
+
+/**
  * Get total message count for a chat.
  */
 export function getMessageCount(chatId: string): number {
