@@ -31,6 +31,7 @@ function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
     }),
     fingerprintArchive: () => 'v1:transcript:media',
     findDuplicate: () => null,
+    findUpdate: () => null,
     indexMedia: async (candidates, _directoryUri, onProgress) => {
       onProgress({ completed: 1, total: 1, filename: candidates[0].filename })
       return new Map([
@@ -59,10 +60,7 @@ function createHarness(overrides: Partial<ChatImportDependencies> = {}) {
     saveChat: chat => {
       savedChats.set(chat.id, chat)
     },
-    replaceChat: (existingChatId, chat) => {
-      savedChats.delete(existingChatId)
-      savedChats.set(chat.id, chat)
-    },
+    mergeChat: (_existing, staged) => staged,
     deleteChat: chatId => {
       savedChats.delete(chatId)
     },
@@ -139,7 +137,7 @@ describe('chat import workflow', () => {
     expect(progress).toEqual([
       { phase: 'extracting', completed: 0, total: 7 },
       { phase: 'discovering', completed: 1, total: 7 },
-      { phase: 'checking-duplicate', completed: 2, total: 7 },
+      { phase: 'matching-chat', completed: 2, total: 7 },
       { phase: 'indexing-media', completed: 3, total: 7 },
       {
         phase: 'indexing-media',
@@ -175,6 +173,111 @@ describe('chat import workflow', () => {
 
     expect(result.chat.importDiagnostics).toEqual(diagnostics)
     expect(harness.savedChats.get('chat-42')?.importDiagnostics).toEqual(diagnostics)
+  })
+
+  it('parses only the suffix and merges it into a chat proven by history', async () => {
+    const parsedInputs: Array<{ chatId: string; myName?: string; skipMessageCount?: number }> = []
+    const parsingMediaFilenames: string[][] = []
+    const indexedFilenames: string[] = []
+    const mergedChat: SavedChat = {
+      ...duplicateChat,
+      messageCount: 3,
+      lastMessageText: 'new message',
+      lastMessageTime: '2026-08-23T05:01:00.000Z',
+      importedAt: '2026-08-23T05:00:00.000Z',
+      archiveFingerprint: 'v1:transcript:media'
+    }
+    const harness = createHarness({
+      discoverArchive: () => ({
+        transcriptUri: 'file:///documents/whatsapp-chats/chat-42/_chat.txt',
+        mediaCandidates: [
+          {
+            filename: 'old-photo.jpg',
+            uri: 'file:///documents/whatsapp-chats/chat-42/old-photo.jpg',
+            type: 'image',
+            size: 90
+          },
+          {
+            filename: 'photo.jpg',
+            uri: 'file:///documents/whatsapp-chats/chat-42/photo.jpg',
+            type: 'image',
+            size: 100
+          }
+        ]
+      }),
+      findUpdate: () => ({
+        chat: duplicateChat,
+        mode: 'append',
+        skipMessageCount: 2,
+        newMessageCount: 1,
+        mediaFilenames: ['photo.jpg']
+      }),
+      indexMedia: async candidates => {
+        indexedFilenames.push(...candidates.map(candidate => candidate.filename))
+        return new Map()
+      },
+      parseTranscript: async input => {
+        parsedInputs.push(input)
+        parsingMediaFilenames.push([...input.mediaMap.keys()])
+        return {
+          participants: ['Me', 'Alice'],
+          messageCount: 3,
+          persistedMessageCount: 1
+        }
+      },
+      mergeChat: () => mergedChat
+    })
+
+    const result = await harness.importChat({
+      temporaryArchiveUri: 'file:///cache/alice-update.zip',
+      archiveName: 'Discussion WhatsApp avec Alice.zip'
+    })
+
+    expect(indexedFilenames).toEqual(['photo.jpg'])
+    expect(parsingMediaFilenames).toEqual([['old-photo.jpg', 'photo.jpg']])
+    expect(parsedInputs).toEqual([
+      {
+        chatId: 'chat-42',
+        myName: 'Me',
+        skipMessageCount: 2,
+        openTranscript: expect.any(Function),
+        mediaMap: expect.any(Map),
+        signal: undefined
+      }
+    ])
+    expect(result).toEqual({ chat: mergedChat, outcome: 'updated' })
+  })
+
+  it('treats a history match with no later messages as already up to date', async () => {
+    let indexCalls = 0
+    let parseCalls = 0
+    const harness = createHarness({
+      findUpdate: () => ({
+        chat: duplicateChat,
+        mode: 'append',
+        skipMessageCount: 2,
+        newMessageCount: 0,
+        mediaFilenames: []
+      }),
+      indexMedia: async () => {
+        indexCalls++
+        return new Map()
+      },
+      parseTranscript: async () => {
+        parseCalls++
+        return { participants: [], messageCount: 0 }
+      }
+    })
+
+    const result = await harness.importChat({
+      temporaryArchiveUri: 'file:///cache/same-history.zip',
+      archiveName: 'Alice.zip'
+    })
+
+    expect(result).toEqual({ chat: duplicateChat, outcome: 'up-to-date' })
+    expect(indexCalls).toBe(0)
+    expect(parseCalls).toBe(0)
+    expect(harness.cleanedDirectories).toEqual(['file:///documents/whatsapp-chats/chat-42'])
   })
 
   it('removes partial messages, metadata, the extracted directory, and the temporary archive', async () => {
@@ -277,7 +380,7 @@ describe('chat import workflow', () => {
     expect(calls).toEqual(['metadata', 'messages', 'directory', 'archive'])
   })
 
-  it('opens equivalent content without indexing or parsing it again', async () => {
+  it('opens equivalent content as up to date without indexing or parsing it again', async () => {
     let parseCalls = 0
     const harness = createHarness({
       findDuplicate: () => duplicateChat,
@@ -289,56 +392,13 @@ describe('chat import workflow', () => {
 
     const result = await harness.importChat({
       temporaryArchiveUri: 'file:///cache/renamed-export.zip',
-      archiveName: 'totally-different-name.zip',
-      onDuplicate: () => 'open'
+      archiveName: 'totally-different-name.zip'
     })
 
-    expect(result).toEqual({ chat: duplicateChat, outcome: 'opened-existing' })
+    expect(result).toEqual({ chat: duplicateChat, outcome: 'up-to-date' })
     expect(parseCalls).toBe(0)
     expect(harness.cleanedDirectories).toEqual(['file:///documents/whatsapp-chats/chat-42'])
     expect(harness.cleanedArchives).toEqual(['file:///cache/renamed-export.zip'])
-  })
-
-  it('atomically selects replacement only after the new chat has parsed', async () => {
-    const replacements: Array<[string, SavedChat]> = []
-    const harness = createHarness({
-      findDuplicate: () => duplicateChat,
-      replaceChat: (existingChatId, replacement) => {
-        replacements.push([existingChatId, replacement])
-      }
-    })
-
-    const result = await harness.importChat({
-      temporaryArchiveUri: 'file:///cache/replacement.zip',
-      archiveName: 'replacement.zip',
-      onDuplicate: () => 'replace'
-    })
-
-    expect(result.outcome).toBe('replaced')
-    expect(replacements).toEqual([['chat-existing', result.chat]])
-    expect(harness.cleanedDirectories).toEqual([duplicateChat.extractDirUri])
-  })
-
-  it('lets the user cancel a detected duplicate without touching the existing chat', async () => {
-    let indexCalls = 0
-    const harness = createHarness({
-      findDuplicate: () => duplicateChat,
-      indexMedia: async () => {
-        indexCalls += 1
-        return new Map()
-      }
-    })
-
-    await expect(
-      harness.importChat({
-        temporaryArchiveUri: 'file:///cache/duplicate.zip',
-        archiveName: 'duplicate.zip',
-        onDuplicate: () => 'cancel'
-      })
-    ).rejects.toBeInstanceOf(ImportCancelledError)
-
-    expect(indexCalls).toBe(0)
-    expect(harness.cleanedDirectories).toEqual(['file:///documents/whatsapp-chats/chat-42'])
   })
 
   it('cancels future work promptly and rolls partial state back', async () => {

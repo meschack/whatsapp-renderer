@@ -13,6 +13,7 @@ export interface IncrementalChatParserRequest {
   mediaMap: MediaMap
   myName?: string
   signal?: AbortSignal
+  skipMessageCount?: number
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -29,8 +30,15 @@ export function createIncrementalChatParser(dependencies: IncrementalChatParserD
 
   return async function parseTranscript(
     request: IncrementalChatParserRequest
-  ): Promise<WhatsAppChatMetadata> {
+  ): Promise<WhatsAppChatMetadata & { persistedMessageCount: number }> {
+    const skipMessageCount = request.skipMessageCount ?? 0
+    if (!Number.isInteger(skipMessageCount) || skipMessageCount < 0) {
+      throw new Error('skipMessageCount must be a non-negative integer.')
+    }
+
     let batch: Message[] = []
+    let visitedMessageCount = 0
+    let persistedMessageCount = 0
 
     const flush = async () => {
       throwIfAborted(request.signal)
@@ -47,13 +55,15 @@ export function createIncrementalChatParser(dependencies: IncrementalChatParserD
       request.myName,
       async message => {
         throwIfAborted(request.signal)
+        if (visitedMessageCount++ < skipMessageCount) return
         batch.push(message)
+        persistedMessageCount++
         if (batch.length === dependencies.batchSize) await flush()
       }
     )
 
     throwIfAborted(request.signal)
     await flush()
-    return metadata
+    return { ...metadata, persistedMessageCount }
   }
 }

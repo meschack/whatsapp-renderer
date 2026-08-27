@@ -137,4 +137,31 @@ describe('incremental chat parser', () => {
     expect(firstText).toBe('message-0')
     expect(lastText).toBe(`message-${messageCount - 1}`)
   })
+
+  it('persists only the suffix after an update history anchor', async () => {
+    const written: Message[] = []
+    const parseTranscript = createIncrementalChatParser({
+      batchSize: 2,
+      writeBatch: async (_chatId, batch) => {
+        written.push(...batch)
+      },
+      yieldToMainThread: async () => {}
+    })
+
+    const result = await parseTranscript({
+      chatId: 'chat-update-stage',
+      openTranscript: chunkText(
+        Array.from(
+          { length: 5 },
+          (_, index) => `13/05/2026, 08:0${index} - Alice: message-${index}\n`
+        ).join(''),
+        [11, 3, 29]
+      ),
+      mediaMap: new Map(),
+      skipMessageCount: 3
+    })
+
+    expect(result).toMatchObject({ messageCount: 5, persistedMessageCount: 2 })
+    expect(written.map(message => message.text)).toEqual(['message-3', 'message-4'])
+  })
 })

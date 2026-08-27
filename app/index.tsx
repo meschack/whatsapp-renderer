@@ -10,6 +10,7 @@ import { useChatStore } from '@/store/chat-store'
 import {
   deleteSavedChat,
   deleteAllSavedChats,
+  getChatSourceDirectories,
   renameSavedChat,
   setSavedChatArchived,
   setSavedChatPinned
@@ -28,11 +29,7 @@ import { parseChat } from '@/utils/parser'
 import { indexMedia } from '@/utils/media-index'
 import { openFileTranscript } from '@/utils/transcript-stream'
 import { importChat } from '@/utils/chat-import'
-import {
-  ImportCancelledError,
-  type ChatImportPhase,
-  type DuplicateImportChoice
-} from '@/utils/chat-import-workflow'
+import { ImportCancelledError, type ChatImportPhase } from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
 import type { MediaMap, SavedChat } from '@/models/types'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
@@ -42,13 +39,19 @@ import { ChatActionsSheet } from '@/components/home/chat-actions-sheet'
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
   discovering: 'Finding messages and media',
-  'checking-duplicate': 'Checking for duplicates',
+  'matching-chat': 'Looking for an existing chat',
   'indexing-media': 'Preparing media previews',
   reading: 'Reading transcript',
   parsing: 'Importing messages',
   persisting: 'Saving chat',
   complete: 'Import complete',
   'rolling-back': 'Cleaning up failed import'
+}
+
+function cleanupStoredChatFiles(chat: SavedChat): void {
+  const registeredSources = getChatSourceDirectories(chat.id)
+  const sources = registeredSources.length > 0 ? registeredSources : [chat.extractDirUri]
+  for (const directoryUri of new Set(sources)) cleanupExtractedChat(directoryUri)
 }
 
 export default function HomeScreen() {
@@ -62,23 +65,6 @@ export default function HomeScreen() {
   const [showingArchived, setShowingArchived] = useState(false)
   const importControllerRef = useRef<AbortController | null>(null)
   const library = useMemo(() => getChatLibrarySections(savedChats), [savedChats])
-
-  const chooseDuplicate = useCallback(
-    (chat: SavedChat) =>
-      new Promise<DuplicateImportChoice>(resolve => {
-        Alert.alert(
-          'Chat already imported',
-          `“${chat.chatName}” has the same chat content. What should happen?`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
-            { text: 'Replace', style: 'destructive', onPress: () => resolve('replace') },
-            { text: 'Open existing', onPress: () => resolve('open') }
-          ],
-          { cancelable: true, onDismiss: () => resolve('cancel') }
-        )
-      }),
-    []
-  )
 
   const handleImport = useCallback(async () => {
     try {
@@ -112,7 +98,6 @@ export default function HomeScreen() {
         temporaryArchiveUri: pickedFile.uri,
         archiveName: pickedFile.name ?? 'Chat.zip',
         signal: controller.signal,
-        onDuplicate: chooseDuplicate,
         onProgress: ({ phase, completed, total, phaseCompleted, phaseTotal }) => {
           const percentage = Math.round((completed / total) * 100)
           const itemProgress =
@@ -139,7 +124,7 @@ export default function HomeScreen() {
       const diagnosticCount = chat.importDiagnostics
         ? getImportDiagnosticTotal(chat.importDiagnostics)
         : 0
-      if (outcome !== 'opened-existing' && diagnosticCount > 0) {
+      if (outcome !== 'up-to-date' && diagnosticCount > 0) {
         Alert.alert(
           'Import completed with notices',
           `${diagnosticCount} recoverable issue${diagnosticCount === 1 ? '' : 's'} found. ` +
@@ -151,7 +136,7 @@ export default function HomeScreen() {
       setIsLoading(false)
       setIsImporting(false)
       importControllerRef.current = null
-      router.push(outcome === 'opened-existing' ? '/chat' : '/select-sender')
+      router.push(outcome === 'imported' ? '/select-sender' : '/chat')
     } catch (err: unknown) {
       const wasCancelled =
         err instanceof ImportCancelledError || (err instanceof Error && err.name === 'AbortError')
@@ -163,7 +148,7 @@ export default function HomeScreen() {
       setStatusText('')
       if (!wasCancelled) Alert.alert('Import Error', message)
     }
-  }, [chooseDuplicate, refreshSavedChats, router, setChatData, setIsLoading, setError])
+  }, [refreshSavedChats, router, setChatData, setIsLoading, setError])
 
   const handleOpenChat = useCallback(
     async (chat: SavedChat) => {
@@ -264,7 +249,7 @@ export default function HomeScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            cleanupExtractedChat(chat.extractDirUri)
+            cleanupStoredChatFiles(chat)
             deleteMessages(chat.id)
             deleteSavedChat(chat.id)
             refreshSavedChats()
@@ -313,7 +298,7 @@ export default function HomeScreen() {
           style: 'destructive',
           onPress: () => {
             for (const chat of savedChats) {
-              cleanupExtractedChat(chat.extractDirUri)
+              cleanupStoredChatFiles(chat)
               deleteMessages(chat.id)
             }
             deleteAllSavedChats()

@@ -565,6 +565,21 @@ export function getMessageCount(chatId: string): number {
   return row?.count ?? 0
 }
 
+/** Return a small chronological tail used to prove continuity with a later export. */
+export function getRecentMessages(chatId: string, limit: number): Message[] {
+  if (!Number.isInteger(limit) || limit < 1) return []
+  const rows = getArchiveDatabase().getAllSync<MessageRow>(
+    `SELECT ${MESSAGE_PAGE_COLUMNS}
+     FROM messages
+     WHERE chatId = ?
+     ORDER BY id DESC
+     LIMIT ?`,
+    chatId,
+    limit
+  )
+  return rows.reverse().map(rowToMessage)
+}
+
 /**
  * Check if messages exist for a chat (for legacy migration detection).
  */

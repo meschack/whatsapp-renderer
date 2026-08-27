@@ -1,4 +1,6 @@
 import type { ImportDiagnostics, MediaMap, SavedChat } from '@/models/types'
+import { getImportedChatName } from './chat-export-name'
+import type { ChatUpdateMatch } from './chat-update-matcher'
 import type { MediaCandidate, MediaIndexProgress } from '@/utils/media-indexer'
 
 type Awaitable<T> = T | Promise<T>
@@ -6,7 +8,7 @@ type Awaitable<T> = T | Promise<T>
 export type ChatImportPhase =
   | 'extracting'
   | 'discovering'
-  | 'checking-duplicate'
+  | 'matching-chat'
   | 'indexing-media'
   | 'reading'
   | 'parsing'
@@ -27,16 +29,13 @@ export interface ChatImportRequest {
   temporaryArchiveUri: string
   archiveName: string
   onProgress?: (progress: ChatImportProgress) => void
-  onDuplicate?: (chat: SavedChat) => Awaitable<DuplicateImportChoice>
   signal?: AbortSignal
 }
 
 export interface ChatImportResult {
   chat: SavedChat
-  outcome: 'imported' | 'replaced' | 'opened-existing'
+  outcome: 'imported' | 'updated' | 'up-to-date'
 }
-
-export type DuplicateImportChoice = 'open' | 'replace' | 'cancel'
 
 export class ImportCancelledError extends Error {
   constructor(message = 'Import cancelled') {
@@ -49,10 +48,15 @@ export interface ChatImportDependencies {
   extractArchive: (archiveUri: string) => Promise<string>
   discoverArchive: (directoryUri: string) => Awaitable<{
     transcriptUri: string
+    transcriptName?: string
     mediaCandidates: MediaCandidate[]
   }>
   fingerprintArchive: (transcriptUri: string, candidates: MediaCandidate[]) => Awaitable<string>
   findDuplicate: (fingerprint: string) => Awaitable<SavedChat | null>
+  findUpdate: (input: {
+    openTranscript: () => AsyncIterable<string>
+    mediaCandidates: MediaCandidate[]
+  }) => Awaitable<ChatUpdateMatch | null>
   indexMedia: (
     candidates: MediaCandidate[],
     directoryUri: string,
@@ -64,15 +68,22 @@ export interface ChatImportDependencies {
     chatId: string
     openTranscript: () => AsyncIterable<string>
     mediaMap: MediaMap
+    myName?: string
+    skipMessageCount?: number
     signal?: AbortSignal
   }) => Awaitable<{
     participants: string[]
     messageCount: number
+    persistedMessageCount?: number
     diagnostics?: ImportDiagnostics
   }>
   getLastMessage: (chatId: string) => Awaitable<{ text: string | null; timestamp: number } | null>
   saveChat: (chat: SavedChat) => Awaitable<void>
-  replaceChat: (existingChatId: string, replacement: SavedChat) => Awaitable<void>
+  mergeChat: (
+    existing: SavedChat,
+    staged: SavedChat,
+    match: ChatUpdateMatch
+  ) => Awaitable<SavedChat>
   deleteChat: (chatId: string) => Awaitable<void>
   deleteMessages: (chatId: string) => Awaitable<void>
   cleanupExtractedDirectory: (directoryUri: string) => Awaitable<void>
@@ -92,17 +103,28 @@ function getChatId(directoryUri: string): string {
   return chatId
 }
 
-export function getImportedChatName(archiveName: string): string {
-  const withoutExtension = archiveName.replace(/\.zip$/i, '')
-  const withoutWhatsAppPrefix = withoutExtension.replace(/^WhatsApp Chat\s*-\s*/i, '')
-  return withoutWhatsAppPrefix.trim() || 'Chat'
+function createParsingMediaMap(candidates: MediaCandidate[], indexedMedia: MediaMap): MediaMap {
+  const mediaMap: MediaMap = new Map(
+    candidates.map(candidate => [
+      candidate.filename,
+      {
+        ...candidate,
+        width: null,
+        height: null,
+        duration: null,
+        previewUri: null,
+        waveform: null
+      }
+    ])
+  )
+  for (const [filename, attachment] of indexedMedia) mediaMap.set(filename, attachment)
+  return mediaMap
 }
 
 export function createChatImporter(dependencies: ChatImportDependencies) {
   return async function importChat(request: ChatImportRequest): Promise<ChatImportResult> {
     let extractedDirectoryUri: string | null = null
     let chatId: string | null = null
-    let duplicate: SavedChat | null = null
     let temporaryArchiveCleaned = false
     let completed = 0
 
@@ -119,35 +141,50 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
 
       completed = 1
       report('discovering')
-      const { transcriptUri, mediaCandidates } =
+      const { transcriptUri, transcriptName, mediaCandidates } =
         await dependencies.discoverArchive(extractedDirectoryUri)
+      const importedChatName = getImportedChatName(request.archiveName, transcriptName)
       throwIfCancelled(request.signal)
 
       completed = 2
-      report('checking-duplicate')
+      report('matching-chat')
       const fingerprint = await dependencies.fingerprintArchive(transcriptUri, mediaCandidates)
       throwIfCancelled(request.signal)
-      duplicate = await dependencies.findDuplicate(fingerprint)
+      const duplicate = await dependencies.findDuplicate(fingerprint)
       throwIfCancelled(request.signal)
 
       if (duplicate) {
-        const choice = (await request.onDuplicate?.(duplicate)) ?? 'cancel'
-        throwIfCancelled(request.signal)
-        if (choice === 'open') {
-          await dependencies.cleanupTemporaryArchive(request.temporaryArchiveUri)
-          temporaryArchiveCleaned = true
-          await dependencies.cleanupExtractedDirectory(extractedDirectoryUri)
-          completed = TOTAL_IMPORT_UNITS
-          report('complete')
-          return { chat: duplicate, outcome: 'opened-existing' }
-        }
-        if (choice === 'cancel') throw new ImportCancelledError('Duplicate import cancelled')
+        await dependencies.cleanupTemporaryArchive(request.temporaryArchiveUri)
+        temporaryArchiveCleaned = true
+        await dependencies.cleanupExtractedDirectory(extractedDirectoryUri)
+        completed = TOTAL_IMPORT_UNITS
+        report('complete')
+        return { chat: duplicate, outcome: 'up-to-date' }
       }
+
+      const openTranscript = await dependencies.openTranscript(transcriptUri)
+      const update = await dependencies.findUpdate({
+        openTranscript,
+        mediaCandidates
+      })
+      throwIfCancelled(request.signal)
+      if (update?.mode === 'append' && update.newMessageCount === 0) {
+        await dependencies.cleanupTemporaryArchive(request.temporaryArchiveUri)
+        temporaryArchiveCleaned = true
+        await dependencies.cleanupExtractedDirectory(extractedDirectoryUri)
+        completed = TOTAL_IMPORT_UNITS
+        report('complete')
+        return { chat: update.chat, outcome: 'up-to-date' }
+      }
+      const requiredMedia = update ? new Set(update.mediaFilenames) : null
+      const mediaToIndex = requiredMedia
+        ? mediaCandidates.filter(candidate => requiredMedia.has(candidate.filename))
+        : mediaCandidates
 
       completed = 3
       report('indexing-media')
       const mediaMap = await dependencies.indexMedia(
-        mediaCandidates,
+        mediaToIndex,
         extractedDirectoryUri,
         progress => {
           throwIfCancelled(request.signal)
@@ -162,11 +199,11 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
         },
         request.signal
       )
+      const parsingMediaMap = createParsingMediaMap(mediaCandidates, mediaMap)
       throwIfCancelled(request.signal)
 
       completed = 4
       report('reading')
-      const openTranscript = await dependencies.openTranscript(transcriptUri)
       throwIfCancelled(request.signal)
 
       completed = 5
@@ -174,7 +211,9 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
       const parsed = await dependencies.parseTranscript({
         chatId,
         openTranscript,
-        mediaMap,
+        mediaMap: parsingMediaMap,
+        myName: update?.chat.myName,
+        skipMessageCount: update?.skipMessageCount,
         signal: request.signal
       })
       if (parsed.messageCount === 0) throw new Error('No messages found in the chat file.')
@@ -188,31 +227,29 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
       const importedAt = dependencies.now().toISOString()
       const chat: SavedChat = {
         id: chatId,
-        chatName: getImportedChatName(request.archiveName),
-        myName: '',
+        chatName: update?.chat.chatName ?? importedChatName,
+        myName: update?.chat.myName ?? '',
         participants: parsed.participants,
         extractDirUri: extractedDirectoryUri,
-        messageCount: parsed.messageCount,
+        messageCount: parsed.persistedMessageCount ?? parsed.messageCount,
         lastMessageText: lastMessage?.text ?? null,
         lastMessageTime: lastMessage ? new Date(lastMessage.timestamp).toISOString() : importedAt,
         importedAt,
         archiveFingerprint: fingerprint,
         importDiagnostics: parsed.diagnostics
       }
-      if (duplicate) {
-        await dependencies.replaceChat(duplicate.id, chat)
-        try {
-          await dependencies.cleanupExtractedDirectory(duplicate.extractDirUri)
-        } catch {
-          // Database replacement is already consistent; a stale directory is safe to clean later.
-        }
+      if (update) {
+        const merged = await dependencies.mergeChat(update.chat, chat, update)
+        completed = TOTAL_IMPORT_UNITS
+        report('complete')
+        return { chat: merged, outcome: 'updated' }
       } else {
         await dependencies.saveChat(chat)
       }
 
       completed = TOTAL_IMPORT_UNITS
       report('complete')
-      return { chat, outcome: duplicate ? 'replaced' : 'imported' }
+      return { chat, outcome: 'imported' }
     } catch (error) {
       report('rolling-back')
 
