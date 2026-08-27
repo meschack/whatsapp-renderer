@@ -84,6 +84,28 @@ describe('parseWhatsAppChat', () => {
     expect(result.messages[1].isMine).toBe(false)
   })
 
+  it('parses Samsung French exports using localized day periods', () => {
+    const content = [
+      '13/05/2026, 4:15 matin - Alice: Avant le lever du soleil',
+      '13/05/2026, 12:00 midi - Bob: À midi',
+      '13/05/2026, 3:30 après-midi - Alice: Dans l’après-midi',
+      '13/05/2026, 8:45 soir - Bob: Dans la soirée',
+      '14/05/2026, 12:10 nuit - Alice: Après minuit',
+      '14/05/2026, 2:05 nuit - Bob: Pendant la nuit'
+    ].join('\n')
+
+    const result = parseWhatsAppChat(content, new Map(), 'Alice')
+
+    expect(result.messages.map(message => message.timestamp)).toEqual([
+      new Date(2026, 4, 13, 4, 15),
+      new Date(2026, 4, 13, 12, 0),
+      new Date(2026, 4, 13, 15, 30),
+      new Date(2026, 4, 13, 20, 45),
+      new Date(2026, 4, 14, 0, 10),
+      new Date(2026, 4, 14, 2, 5)
+    ])
+  })
+
   it('drops localized omitted-media placeholders without dropping real attachments', () => {
     const content = [
       '13/05/2026, 08:00 - Alice: <Médias omis>',
