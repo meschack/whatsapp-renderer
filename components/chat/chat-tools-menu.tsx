@@ -38,7 +38,7 @@ export function ChatToolsMenu({
     { label: 'Chat insights', icon: 'stats-chart-outline', onPress: onInsights },
     { label: 'Appearance', icon: 'color-palette-outline', onPress: onAppearance },
     {
-      label: `Haptic feedback ${hapticsEnabled ? 'on' : 'off'}`,
+      label: 'Haptics',
       icon: hapticsEnabled ? 'phone-portrait' : 'phone-portrait-outline',
       onPress: onToggleHaptics,
       checked: hapticsEnabled
@@ -79,7 +79,7 @@ export function ChatToolsMenu({
               size={20}
               color={action.icon === 'warning-outline' ? '#F7C948' : '#AEBAC1'}
             />
-            <Text className='ml-3 text-[14px] text-[#E9EDEF]'>{action.label}</Text>
+            <Text className='ml-3 flex-1 text-[14px] text-[#E9EDEF]'>{action.label}</Text>
             {action.checked !== undefined ? (
               <Ionicons
                 name={action.checked ? 'checkbox' : 'square-outline'}
