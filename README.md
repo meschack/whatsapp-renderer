@@ -29,3 +29,9 @@ The **Android release builds** GitHub Actions workflow creates signed builds for
 - `kinsay-play-store.aab` is for Play Store distribution and cannot be installed directly.
 
 Manual workflow runs become prereleases named `Kinsay build #…`. Pushing a tag matching `v*` creates a normal versioned release using that tag.
+
+## iOS sideloading builds
+
+The **iOS unsigned build** workflow compiles `kinsay-ios-unsigned.ipa` on a macOS runner and adds it to the newest GitHub Release by default. The IPA is intentionally unsigned so SideStore or Sideloadly can sign it locally with the device owner's Apple Account.
+
+An unsigned IPA cannot be installed directly. With a free Apple Account, the locally signed application must be refreshed within Apple's seven-day provisioning window.
