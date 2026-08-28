@@ -10,7 +10,6 @@ import { useRecyclingState } from '@shopify/flash-list'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { useChatAppearance } from './chat-appearance-context'
-import type { ChatTextScale } from '@/utils/chat-appearance'
 
 interface MediaMessageProps {
   message: Message
@@ -178,7 +177,7 @@ const DocumentMessage = memo(function DocumentMessage({
   textScale
 }: {
   message: Message
-  textScale: ChatTextScale
+  textScale: number
 }) {
   const [busyAction, setBusyAction] = useRecyclingState<'open' | 'share' | null>(null, [message.id])
   const uriFilename = message.mediaUri?.split('/').pop()?.split(/[?#]/)[0] ?? null

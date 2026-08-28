@@ -1,6 +1,12 @@
 export const CHAT_TEXT_SCALES = [0.9, 1, 1.15] as const
 export type ChatTextScale = (typeof CHAT_TEXT_SCALES)[number]
 
+const IOS_CHAT_TEXT_SCALE = 1.12
+
+export function getEffectiveChatTextScale(scale: ChatTextScale, platform: string): number {
+  return platform === 'ios' ? Number((scale * IOS_CHAT_TEXT_SCALE).toFixed(3)) : scale
+}
+
 export const CHAT_WALLPAPERS = [
   {
     id: 'classic',
@@ -52,7 +58,7 @@ export function normalizeChatAppearance(
 export function getChatTextMetrics(
   baseFontSize: number,
   baseLineHeight: number,
-  scale: ChatTextScale
+  scale: number
 ): { fontSize: number; lineHeight: number } {
   return {
     fontSize: baseFontSize * scale,

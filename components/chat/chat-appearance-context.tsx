@@ -1,10 +1,37 @@
-import { DEFAULT_CHAT_APPEARANCE, type ChatAppearancePreference } from '@/utils/chat-appearance'
-import { createContext, useContext } from 'react'
+import {
+  DEFAULT_CHAT_APPEARANCE,
+  getEffectiveChatTextScale,
+  type ChatAppearancePreference
+} from '@/utils/chat-appearance'
+import { createContext, useContext, useMemo, type PropsWithChildren } from 'react'
+import { Platform } from 'react-native'
 
-const ChatAppearanceContext = createContext<ChatAppearancePreference>(DEFAULT_CHAT_APPEARANCE)
+interface RenderedChatAppearance {
+  wallpaper: ChatAppearancePreference['wallpaper']
+  textScale: number
+}
 
-export const ChatAppearanceProvider = ChatAppearanceContext.Provider
+const ChatAppearanceContext = createContext<RenderedChatAppearance>(DEFAULT_CHAT_APPEARANCE)
 
-export function useChatAppearance(): ChatAppearancePreference {
+export function ChatAppearanceProvider({
+  value,
+  children
+}: PropsWithChildren<{ value: ChatAppearancePreference }>) {
+  const renderedValue = useMemo<RenderedChatAppearance>(
+    () => ({
+      wallpaper: value.wallpaper,
+      textScale: getEffectiveChatTextScale(value.textScale, Platform.OS)
+    }),
+    [value.textScale, value.wallpaper]
+  )
+
+  return (
+    <ChatAppearanceContext.Provider value={renderedValue}>
+      {children}
+    </ChatAppearanceContext.Provider>
+  )
+}
+
+export function useChatAppearance(): RenderedChatAppearance {
   return useContext(ChatAppearanceContext)
 }

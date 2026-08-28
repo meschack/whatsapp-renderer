@@ -34,11 +34,17 @@ import {
 import {
   CHAT_WALLPAPERS,
   DEFAULT_CHAT_APPEARANCE,
+  getEffectiveChatTextScale,
   type ChatAppearancePreference
 } from '@/utils/chat-appearance'
 import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
+import {
+  MAINTAIN_BOTTOM_POSITION,
+  MAINTAIN_RESTORED_POSITION,
+  shouldShowVisibleDate
+} from '@/utils/chat-list-position'
 import type { AttachmentRecord } from '@/utils/media-library'
 import type { BookmarkRecord } from '@/utils/bookmarks'
 import type { ChatDateTarget } from '@/utils/chat-calendar'
@@ -49,6 +55,7 @@ import {
   ActivityIndicator,
   Alert,
   ImageBackground,
+  Platform,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewToken
@@ -57,22 +64,11 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 const SCROLL_THRESHOLD = 300
 const POSITION_WRITE_INTERVAL = 750
-const MAINTAIN_BOTTOM_POSITION = {
-  startRenderingFromBottom: true,
-  autoscrollToBottomThreshold: 0.1,
-  animateAutoScrollToBottom: false
-} as const
-const MAINTAIN_RESTORED_POSITION = {
-  ...MAINTAIN_BOTTOM_POSITION,
-  startRenderingFromBottom: false
-} as const
-
 export default function ChatScreen() {
   const { chatData } = useChatStore()
   const flashListRef = useRef<FlashListRef<ListItem>>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [visibleDate, setVisibleDate] = useState<string | null>(null)
-  const [showDateChip, setShowDateChip] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false)
   const [isBookmarkBrowserOpen, setIsBookmarkBrowserOpen] = useState(false)
@@ -89,7 +85,6 @@ export default function ChatScreen() {
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
   const [actionSelection, setActionSelection] = useState<MessageActionSelection | null>(null)
   const lastScrollState = useRef(false)
-  const hideDateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const benchmarkStarted = useRef(false)
   const { budget, profile } = useTimelineBudget()
@@ -106,6 +101,7 @@ export default function ChatScreen() {
   )
   const wallpaper =
     CHAT_WALLPAPERS.find(option => option.id === appearance.wallpaper) ?? CHAT_WALLPAPERS[0]
+  const renderedTextScale = getEffectiveChatTextScale(appearance.textScale, Platform.OS)
 
   useEffect(() => {
     const chatId = chatData?.chatId ?? ''
@@ -190,7 +186,6 @@ export default function ChatScreen() {
 
   useEffect(
     () => () => {
-      if (hideDateTimer.current) clearTimeout(hideDateTimer.current)
       if (clearHighlightTimer.current) clearTimeout(clearHighlightTimer.current)
     },
     []
@@ -262,17 +257,6 @@ export default function ChatScreen() {
     }
   }, [])
 
-  const showVisibleDate = useCallback(() => {
-    if (hideDateTimer.current) clearTimeout(hideDateTimer.current)
-    hideDateTimer.current = null
-    setShowDateChip(true)
-  }, [])
-
-  const hideVisibleDateSoon = useCallback(() => {
-    if (hideDateTimer.current) clearTimeout(hideDateTimer.current)
-    hideDateTimer.current = setTimeout(() => setShowDateChip(false), 1100)
-  }, [])
-
   const handleViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken<ListItem>[] }) => {
       const visibleItems = viewableItems
@@ -296,7 +280,6 @@ export default function ChatScreen() {
   )
 
   const scrollToBottom = useCallback(() => {
-    setShowDateChip(false)
     flashListRef.current?.scrollToEnd({ animated: true })
   }, [])
 
@@ -402,9 +385,6 @@ export default function ChatScreen() {
                   }
                   onScroll={handleScroll}
                   scrollEventThrottle={100}
-                  onScrollBeginDrag={showVisibleDate}
-                  onScrollEndDrag={hideVisibleDateSoon}
-                  onMomentumScrollEnd={hideVisibleDateSoon}
                   onViewableItemsChanged={handleViewableItemsChanged}
                   onStartReached={handleStartReached}
                   onStartReachedThreshold={0.35}
@@ -434,7 +414,7 @@ export default function ChatScreen() {
                 </View>
               )}
 
-              {showDateChip && visibleDate && (
+              {shouldShowVisibleDate(visibleDate) && (
                 <View
                   pointerEvents='none'
                   className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
@@ -442,7 +422,7 @@ export default function ChatScreen() {
                 >
                   <Text
                     className='font-medium text-[#E9EDEF]'
-                    style={{ fontSize: 11.5 * appearance.textScale }}
+                    style={{ fontSize: 11.5 * renderedTextScale }}
                   >
                     {visibleDate}
                   </Text>

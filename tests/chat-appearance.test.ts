@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CHAT_TEXT_SCALES,
   CHAT_WALLPAPERS,
+  getEffectiveChatTextScale,
   getChatTextMetrics,
   normalizeChatAppearance
 } from '../utils/chat-appearance'
@@ -25,5 +26,10 @@ describe('chat appearance', () => {
 
   it('scales font size and line height together', () => {
     expect(getChatTextMetrics(15, 20, 1.15)).toEqual({ fontSize: 17.25, lineHeight: 23 })
+  })
+
+  it('adds optical compensation for chat typography on iOS only', () => {
+    expect(getEffectiveChatTextScale(1, 'ios')).toBe(1.12)
+    expect(getEffectiveChatTextScale(1, 'android')).toBe(1)
   })
 })
