@@ -19,6 +19,10 @@ npm run lint
 npm test
 ```
 
+## Importing chat exports
+
+WhatsApp ZIP exports can be selected from Kinsay's import screen. They can also be opened from another app by choosing Kinsay in Android's **Open with** menu or iOS's **Open in** sheet. Shared archives are copied into Kinsay's cache before the normal import or chat-update flow begins.
+
 ## Release builds
 
 The **Kinsay release builds** GitHub Actions workflow creates signed Android builds for 32-bit ARM, 64-bit ARM, universal ARM, and the Play Store, plus an unsigned iOS IPA. Every successful push to `main` publishes all five files together in a prerelease tagged `kinsay-build-<run number>` on the repository's **Releases** page. Version tags matching `v*` publish stable releases, and the workflow can still be started manually.
