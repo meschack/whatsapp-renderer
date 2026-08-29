@@ -40,6 +40,7 @@ import {
 import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
+import { MAINTAIN_BOTTOM_POSITION, MAINTAIN_RESTORED_POSITION } from '@/utils/chat-list-position'
 import type { AttachmentRecord } from '@/utils/media-library'
 import type { BookmarkRecord } from '@/utils/bookmarks'
 import type { ChatDateTarget } from '@/utils/chat-calendar'
@@ -58,15 +59,6 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 const SCROLL_THRESHOLD = 300
 const POSITION_WRITE_INTERVAL = 750
-const MAINTAIN_BOTTOM_POSITION = {
-  startRenderingFromBottom: true,
-  autoscrollToBottomThreshold: 0.1,
-  animateAutoScrollToBottom: false
-} as const
-const MAINTAIN_RESTORED_POSITION = {
-  ...MAINTAIN_BOTTOM_POSITION,
-  startRenderingFromBottom: false
-} as const
 
 export default function ChatScreen() {
   const { chatData } = useChatStore()
