@@ -6,8 +6,20 @@ import {
   setPreferredAudioPlaybackRate
 } from '@/store/preference-database'
 import { getNextPlaybackRate } from '@/utils/audio-presentation'
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
+import {
+  advancePendingAudioTransition,
+  shouldRestorePlaybackRate,
+  VOICE_PLAYBACK_AUDIO_MODE,
+  type PendingAudioTransition
+} from '@/utils/audio-session'
+import {
+  setAudioModeAsync,
+  setIsAudioActiveAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus
+} from 'expo-audio'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
+import { AppState } from 'react-native'
 
 interface AudioPlayerControls {
   play: (uri: string) => Promise<void>
@@ -31,34 +43,98 @@ export function AudioPlayerProvider({
 }: AudioPlayerProviderProps) {
   const { chatData } = useChatStore()
   const chatId = chatData?.chatId ?? null
-  const player = useAudioPlayer(null)
+  const player = useAudioPlayer(null, {
+    updateInterval: 100,
+    keepAudioSessionActive: true,
+    preferredForwardBufferDuration: 1
+  })
   const status = useAudioPlayerStatus(player)
   const statusRef = useRef(status)
   statusRef.current = status
 
   const activeUriRef = useRef<string | null>(null)
-  const pendingPlayUriRef = useRef<string | null>(null)
+  const pendingTransitionRef = useRef<PendingAudioTransition | null>(null)
+  const transitionGenerationRef = useRef(0)
   const completionArmedRef = useRef(true)
   const playbackIntentRef = useRef(0)
+  const playbackSessionActiveRef = useRef(false)
+  const intendsToPlayRef = useRef(false)
   const previousChatIdRef = useRef(chatId)
   const initialPlaybackRate = useMemo(getPreferredAudioPlaybackRate, [])
   const preferredRateRef = useRef(initialPlaybackRate)
 
+  const ensurePlaybackSession = useCallback(async () => {
+    await setAudioModeAsync(VOICE_PLAYBACK_AUDIO_MODE)
+    if (!playbackSessionActiveRef.current) {
+      await setIsAudioActiveAsync(true)
+      playbackSessionActiveRef.current = true
+    }
+    player.setActiveForLockScreen(true, {
+      title: 'Voice message',
+      artist: chatData?.chatName ?? 'Kinsay'
+    })
+  }, [chatData?.chatName, player])
+
+  const endPlaybackSession = useCallback(async () => {
+    intendsToPlayRef.current = false
+    playbackSessionActiveRef.current = false
+    player.clearLockScreenControls()
+    try {
+      await setIsAudioActiveAsync(false)
+    } catch (error) {
+      console.error('Failed to release voice playback audio focus', error)
+    }
+  }, [player])
+
   const activateUri = useCallback(
     (uri: string) => {
       activeUriRef.current = uri
-      pendingPlayUriRef.current = uri
+      intendsToPlayRef.current = true
+      pendingTransitionRef.current = {
+        uri,
+        generation: ++transitionGenerationRef.current,
+        sawUnloaded: false
+      }
       const preferredRate = preferredRateRef.current
       audioPlaybackStore.setActiveUri(uri, preferredRate)
       player.replace({ uri })
-      player.setPlaybackRate(preferredRate)
     },
     [player]
   )
 
   useEffect(() => {
+    void setAudioModeAsync(VOICE_PLAYBACK_AUDIO_MODE).catch(error => {
+      console.error('Failed to configure voice playback', error)
+    })
+  }, [])
+
+  useEffect(() => {
     const uri = activeUriRef.current
     if (!uri) return
+
+    const pending = pendingTransitionRef.current
+    if (pending) {
+      const transition = advancePendingAudioTransition(pending, {
+        isLoaded: status.isLoaded,
+        playing: status.playing,
+        currentTime: status.currentTime,
+        duration: status.duration
+      })
+      pendingTransitionRef.current = transition.pending
+      audioPlaybackStore.updateActiveStatus({
+        isPlaying: false,
+        progress: 0,
+        currentTime: 0,
+        duration: status.isLoaded ? status.duration : 0,
+        hasPlayed: false
+      })
+
+      if (transition.shouldPlay) {
+        player.setPlaybackRate(preferredRateRef.current)
+        player.play()
+      }
+      return
+    }
 
     const progress = status.duration > 0 ? status.currentTime / status.duration : 0
     audioPlaybackStore.updateActiveStatus({
@@ -71,12 +147,22 @@ export function AudioPlayerProvider({
 
     if (status.duration > 0) audioPlaybackStore.setDuration(uri, status.duration)
 
-    if (pendingPlayUriRef.current === uri && status.duration > 0 && !status.playing) {
-      pendingPlayUriRef.current = null
+    if (
+      status.isLoaded &&
+      shouldRestorePlaybackRate(preferredRateRef.current, status.playbackRate, Boolean(uri))
+    ) {
       player.setPlaybackRate(preferredRateRef.current)
-      player.play()
     }
-  }, [player, status.currentTime, status.duration, status.playing])
+    if (status.mediaServicesDidReset && intendsToPlayRef.current) player.play()
+  }, [
+    player,
+    status.currentTime,
+    status.duration,
+    status.isLoaded,
+    status.mediaServicesDidReset,
+    status.playbackRate,
+    status.playing
+  ])
 
   useEffect(() => {
     if (!status.didJustFinish) {
@@ -93,24 +179,36 @@ export function AudioPlayerProvider({
     const intent = playbackIntentRef.current
     void resolveNextAudioUri(chatId, finishedUri)
       .then(nextUri => {
-        if (
-          !nextUri ||
-          playbackIntentRef.current !== intent ||
-          activeUriRef.current !== finishedUri
-        ) {
+        if (playbackIntentRef.current !== intent || activeUriRef.current !== finishedUri) {
           return
         }
-        activateUri(nextUri)
+        if (nextUri) {
+          activateUri(nextUri)
+          return
+        }
+
+        audioPlaybackStore.setActiveUri(null)
+        activeUriRef.current = null
+        void endPlaybackSession().catch(() => undefined)
       })
       .catch(() => {
-        // A lookup failure ends the chain; it must never interrupt the chat screen.
+        if (playbackIntentRef.current !== intent || activeUriRef.current !== finishedUri) return
+        audioPlaybackStore.setActiveUri(null)
+        activeUriRef.current = null
+        void endPlaybackSession().catch(() => undefined)
       })
-  }, [activateUri, chatId, resolveNextAudioUri, status.didJustFinish])
+  }, [activateUri, chatId, endPlaybackSession, resolveNextAudioUri, status.didJustFinish])
 
   const play = useCallback(
     async (uri: string) => {
       playbackIntentRef.current += 1
       const currentStatus = statusRef.current
+      try {
+        await ensurePlaybackSession()
+      } catch (error) {
+        console.error('Failed to start voice playback', error)
+        return
+      }
 
       if (uri === activeUriRef.current) {
         const didFinish =
@@ -118,23 +216,42 @@ export function AudioPlayerProvider({
           !currentStatus.playing &&
           currentStatus.currentTime >= currentStatus.duration - 0.1
 
-        if (currentStatus.playing) player.pause()
-        else if (didFinish) {
+        if (currentStatus.playing) {
+          player.pause()
+          audioPlaybackStore.updateActiveStatus({
+            isPlaying: false,
+            progress: 0,
+            currentTime: 0,
+            duration: currentStatus.duration,
+            hasPlayed: false
+          })
+          await endPlaybackSession()
+        } else if (didFinish) {
           await player.seekTo(0)
+          intendsToPlayRef.current = true
+          player.setPlaybackRate(preferredRateRef.current)
           player.play()
-        } else player.play()
+        } else {
+          intendsToPlayRef.current = true
+          player.setPlaybackRate(preferredRateRef.current)
+          player.play()
+        }
         return
       }
 
       activateUri(uri)
     },
-    [activateUri, player]
+    [activateUri, endPlaybackSession, ensurePlaybackSession, player]
   )
 
   const pause = useCallback(() => {
     playbackIntentRef.current += 1
     player.pause()
-  }, [player])
+    audioPlaybackStore.setActiveUri(null)
+    activeUriRef.current = null
+    pendingTransitionRef.current = null
+    void endPlaybackSession().catch(() => undefined)
+  }, [endPlaybackSession, player])
 
   const seek = useCallback(
     (fraction: number) => {
@@ -154,21 +271,34 @@ export function AudioPlayerProvider({
   }, [player])
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active' || !activeUriRef.current) return
+      player.setPlaybackRate(preferredRateRef.current)
+      if (intendsToPlayRef.current && !pendingTransitionRef.current && !statusRef.current.playing) {
+        player.play()
+      }
+    })
+    return () => subscription.remove()
+  }, [player])
+
+  useEffect(() => {
     if (previousChatIdRef.current === chatId) return
     previousChatIdRef.current = chatId
     playbackIntentRef.current += 1
-    pendingPlayUriRef.current = null
+    pendingTransitionRef.current = null
     activeUriRef.current = null
     player.pause()
     audioPlaybackStore.setActiveUri(null)
-  }, [chatId, player])
+    void endPlaybackSession().catch(() => undefined)
+  }, [chatId, endPlaybackSession, player])
 
   useEffect(
     () => () => {
       playbackIntentRef.current += 1
       audioPlaybackStore.setActiveUri(null)
+      player.clearLockScreenControls()
     },
-    []
+    [player]
   )
 
   const controls = useMemo(() => ({ play, pause, seek, cycleRate }), [play, pause, seek, cycleRate])

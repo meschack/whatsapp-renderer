@@ -1,15 +1,17 @@
 import { Ionicons } from '@expo/vector-icons'
+import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { Image } from 'expo-image'
 import { File } from 'expo-file-system'
 import { useVideoPlayer, VideoView } from 'expo-video'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, useWindowDimensions } from 'react-native'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ActivityIndicator, Alert, Modal, type ViewToken, useWindowDimensions } from 'react-native'
 import { Pressable, Text, View } from '@/src/tw'
 import { MediaFileActionError, saveMediaFile, shareMediaFile } from '@/utils/media-file-actions'
-import { getAdjacentMediaSequence, getSafeMediaFilename } from '@/utils/media-file'
+import { getSafeMediaFilename } from '@/utils/media-file'
 import type { AttachmentRecord } from '@/utils/media-library'
 
 interface MediaViewerProps {
+  title?: string
   records: AttachmentRecord[]
   initialSequence: number
   hasOlder: boolean
@@ -21,6 +23,7 @@ interface MediaViewerProps {
 }
 
 export function MediaViewer({
+  title,
   records,
   initialSequence,
   hasOlder,
@@ -31,45 +34,33 @@ export function MediaViewer({
   onJump
 }: MediaViewerProps) {
   const [sequence, setSequence] = useState(initialSequence)
-  const [pendingDirection, setPendingDirection] = useState<'newer' | 'older' | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isSharing, setIsSharing] = useState(false)
+  const listRef = useRef<FlashListRef<AttachmentRecord>>(null)
+  const activeSequenceRef = useRef(initialSequence)
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions()
   const record = records.find(item => item.sequence === sequence) ?? null
   const index = records.findIndex(item => item.sequence === sequence)
-  const mediaAvailable = useMemo(() => {
-    if (!record?.mediaUri) return false
-    try {
-      return new File(record.mediaUri).exists
-    } catch {
-      return false
-    }
-  }, [record?.mediaUri])
-
-  const navigate = useCallback(
-    async (direction: 'newer' | 'older') => {
-      const adjacent = getAdjacentMediaSequence(records, sequence, direction)
-      if (adjacent !== null) {
-        setSequence(adjacent)
-        return
-      }
-
-      const canLoad = direction === 'newer' ? hasNewer : hasOlder
-      if (!canLoad || pendingDirection) return
-      setPendingDirection(direction)
-      try {
-        const loadedRecords = direction === 'newer' ? await loadNewer() : await loadOlder()
-        const loadedAdjacent = getAdjacentMediaSequence(
-          loadedRecords ?? records,
-          sequence,
-          direction
-        )
-        if (loadedAdjacent !== null) setSequence(loadedAdjacent)
-      } finally {
-        setPendingDirection(null)
-      }
-    },
-    [hasNewer, hasOlder, loadNewer, loadOlder, pendingDirection, records, sequence]
+  const initialIndex = Math.max(
+    0,
+    records.findIndex(item => item.sequence === initialSequence)
   )
+
+  const handleViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken<AttachmentRecord>[] }) => {
+      const visible = viewableItems.find(token => token.isViewable)?.item
+      if (visible) {
+        activeSequenceRef.current = visible.sequence
+        setSequence(visible.sequence)
+      }
+    }
+  ).current
+
+  useEffect(() => {
+    const nextIndex = records.findIndex(item => item.sequence === activeSequenceRef.current)
+    if (nextIndex < 0) return
+    listRef.current?.scrollToIndex({ index: nextIndex, animated: false })
+  }, [records])
 
   const runSave = useCallback(async () => {
     if (!record || isSaving) return
@@ -102,9 +93,6 @@ export function MediaViewer({
     }
   }, [isSharing, record])
 
-  const canNavigateNewer = index > 0 || hasNewer
-  const canNavigateOlder = (index >= 0 && index < records.length - 1) || hasOlder
-
   return (
     <Modal visible animationType='fade' statusBarTranslucent onRequestClose={onClose}>
       <View className='flex-1 bg-black'>
@@ -118,7 +106,7 @@ export function MediaViewer({
           </Pressable>
           <View className='ml-1 flex-1'>
             <Text className='text-[14px] font-medium text-white' numberOfLines={1}>
-              {record ? getSafeMediaFilename(record) : 'Media unavailable'}
+              {title ?? (record ? getSafeMediaFilename(record) : 'Media unavailable')}
             </Text>
             <Text className='text-[11px] text-white/60' numberOfLines={1}>
               {record
@@ -131,63 +119,30 @@ export function MediaViewer({
           </Text>
         </View>
 
-        <View className='flex-1 items-center justify-center'>
-          {record?.mediaUri && mediaAvailable ? (
-            record.type === 'video' ? (
-              <FullscreenVideo key={record.mediaUri} uri={record.mediaUri} />
-            ) : (
-              <Image
-                key={record.mediaUri}
-                source={{ uri: record.mediaUri }}
-                recyclingKey={`viewer-${record.mediaUri}`}
-                contentFit='contain'
-                style={{ width: '100%', height: '100%' }}
-              />
-            )
-          ) : (
-            <View className='items-center px-8'>
-              <Ionicons name='cloud-offline-outline' size={48} color='#8696A0' />
-              <Text className='mt-3 text-center text-sm text-white/60'>
-                The original media file is missing.
-              </Text>
-            </View>
+        <FlashList
+          ref={listRef}
+          horizontal
+          pagingEnabled
+          data={records}
+          initialScrollIndex={initialIndex}
+          keyExtractor={item => item.messageId}
+          renderItem={({ item }) => (
+            <MediaSlide record={item} width={screenWidth} height={screenHeight} />
           )}
-        </View>
-
-        <Pressable
-          accessibilityLabel='Newer media'
-          accessibilityState={{ disabled: !canNavigateNewer }}
-          className='absolute top-1/2 left-2 size-11 items-center justify-center rounded-full bg-black/55'
-          disabled={!canNavigateNewer}
-          onPress={() => void navigate('newer')}
-        >
-          {pendingDirection === 'newer' ? (
-            <ActivityIndicator size='small' color='#FFFFFF' />
-          ) : (
-            <Ionicons
-              name='chevron-back'
-              size={28}
-              color={canNavigateNewer ? '#FFFFFF' : '#3B4A54'}
-            />
-          )}
-        </Pressable>
-        <Pressable
-          accessibilityLabel='Older media'
-          accessibilityState={{ disabled: !canNavigateOlder }}
-          className='absolute top-1/2 right-2 size-11 items-center justify-center rounded-full bg-black/55'
-          disabled={!canNavigateOlder}
-          onPress={() => void navigate('older')}
-        >
-          {pendingDirection === 'older' ? (
-            <ActivityIndicator size='small' color='#FFFFFF' />
-          ) : (
-            <Ionicons
-              name='chevron-forward'
-              size={28}
-              color={canNavigateOlder ? '#FFFFFF' : '#3B4A54'}
-            />
-          )}
-        </Pressable>
+          showsHorizontalScrollIndicator={false}
+          maintainVisibleContentPosition={{
+            animateAutoScrollToBottom: false
+          }}
+          onViewableItemsChanged={handleViewableItemsChanged}
+          onStartReached={() => {
+            if (hasNewer) void loadNewer()
+          }}
+          onStartReachedThreshold={0.4}
+          onEndReached={() => {
+            if (hasOlder) void loadOlder()
+          }}
+          onEndReachedThreshold={0.4}
+        />
 
         <View className='absolute right-0 bottom-0 left-0 z-10 flex-row items-center justify-around bg-black/75 px-3 pt-2 pb-4'>
           <ViewerAction
@@ -212,6 +167,49 @@ export function MediaViewer({
     </Modal>
   )
 }
+
+const MediaSlide = memo(function MediaSlide({
+  record,
+  width,
+  height
+}: {
+  record: AttachmentRecord
+  width: number
+  height: number
+}) {
+  const mediaAvailable = useMemo(() => {
+    if (!record.mediaUri) return false
+    try {
+      return new File(record.mediaUri).exists
+    } catch {
+      return false
+    }
+  }, [record.mediaUri])
+
+  return (
+    <View style={{ width, height }} className='items-center justify-center'>
+      {record.mediaUri && mediaAvailable ? (
+        record.type === 'video' ? (
+          <FullscreenVideo uri={record.mediaUri} />
+        ) : (
+          <Image
+            source={{ uri: record.mediaUri }}
+            recyclingKey={`viewer-${record.mediaUri}`}
+            contentFit='contain'
+            style={{ width, height }}
+          />
+        )
+      ) : (
+        <View className='items-center px-8'>
+          <Ionicons name='cloud-offline-outline' size={48} color='#8696A0' />
+          <Text className='mt-3 text-center text-sm text-white/60'>
+            The original media file is missing.
+          </Text>
+        </View>
+      )}
+    </View>
+  )
+})
 
 function FullscreenVideo({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri)

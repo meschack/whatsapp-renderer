@@ -19,6 +19,7 @@ interface ChatBubbleProps {
   showSenderName?: boolean
   senderColor?: string
   highlighted?: boolean
+  onOpenImage?: () => void
   onLongPress?: () => void
 }
 
@@ -28,6 +29,7 @@ export const ChatBubble = memo(function ChatBubble({
   showSenderName = false,
   senderColor,
   highlighted = false,
+  onOpenImage,
   onLongPress
 }: ChatBubbleProps) {
   const isMine = message.isMine
@@ -103,7 +105,7 @@ export const ChatBubble = memo(function ChatBubble({
         ) : null}
 
         {/* Media content */}
-        {hasMedia && <MediaMessage message={message} />}
+        {hasMedia && <MediaMessage message={message} onOpenImage={onOpenImage} />}
 
         {/* Link preview */}
         {firstUrl && <LinkPreview url={firstUrl} isMine={isMine} />}

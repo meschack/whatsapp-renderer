@@ -31,6 +31,28 @@ function record(sequence: number, timestamp: string, sender = 'Alice'): Timeline
   return { sequence, message }
 }
 
+function imageRecord(
+  sequence: number,
+  timestamp: string,
+  sender = 'Alice',
+  overrides: Partial<Message> = {}
+): TimelineRecord {
+  return {
+    sequence,
+    message: {
+      ...record(sequence, timestamp, sender).message,
+      text: null,
+      mediaType: 'image',
+      mediaUri: `file:///${sequence}.jpg`,
+      mediaFilename: `${sequence}.jpg`,
+      mediaPreviewUri: `file:///preview-${sequence}.jpg`,
+      mediaWidth: 1200,
+      mediaHeight: 1600,
+      ...overrides
+    }
+  }
+}
+
 describe('buildTimelineItems', () => {
   it('produces chronological items with exactly one unique separator per day', () => {
     const records = [
@@ -59,6 +81,45 @@ describe('buildTimelineItems', () => {
     const messages = items.filter(item => item.type === 'message')
 
     expect(messages.map(item => item.showSender)).toEqual([true, false, true])
+  })
+
+  it('collapses consecutive images from one sender into a stable gallery item', () => {
+    const items = buildTimelineItems([
+      record(1, '2026-08-22T08:00:00'),
+      imageRecord(2, '2026-08-22T08:01:00'),
+      imageRecord(3, '2026-08-22T08:01:10'),
+      imageRecord(4, '2026-08-22T08:01:20'),
+      imageRecord(5, '2026-08-22T08:01:30'),
+      imageRecord(6, '2026-08-22T08:01:40'),
+      record(7, '2026-08-22T08:02:00')
+    ])
+
+    const gallery = items.find(item => item.type === 'image-group')
+    expect(gallery).toMatchObject({
+      id: 'image-group-2-6',
+      firstSequence: 2,
+      lastSequence: 6,
+      showSender: false
+    })
+    expect(
+      gallery?.type === 'image-group' ? gallery.records.map(item => item.sequence) : []
+    ).toEqual([2, 3, 4, 5, 6])
+  })
+
+  it('does not swallow captions, stickers, sender changes, or distant images into a gallery', () => {
+    const items = buildTimelineItems([
+      imageRecord(1, '2026-08-22T08:00:00'),
+      imageRecord(2, '2026-08-22T08:00:10', 'Alice', { text: 'Keep this caption' }),
+      imageRecord(3, '2026-08-22T08:00:20', 'Alice', {
+        mediaFilename: 'STK-123.webp',
+        mediaUri: 'file:///STK-123.webp'
+      }),
+      imageRecord(4, '2026-08-22T08:00:30', 'Bob'),
+      imageRecord(5, '2026-08-22T08:04:00', 'Bob')
+    ])
+
+    expect(items.some(item => item.type === 'image-group')).toBe(false)
+    expect(items.filter(item => item.type === 'message')).toHaveLength(5)
   })
 })
 
