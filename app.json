@@ -36,7 +36,15 @@
       ],
       "expo-image",
       "expo-asset",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Kinsay to use a photo as a chat wallpaper.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

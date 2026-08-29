@@ -3,6 +3,7 @@ import { ChatBubble } from '@/components/chat/chat-bubble'
 import { ChatCalendar } from '@/components/chat/chat-calendar'
 import { ChatAppearance } from '@/components/chat/chat-appearance'
 import { ChatAppearanceProvider } from '@/components/chat/chat-appearance-context'
+import { ChatWallpaperBackground } from '@/components/chat/chat-wallpaper-background'
 import { BookmarkBrowser } from '@/components/chat/bookmark-browser'
 import { ChatComposer } from '@/components/chat/chat-composer'
 import { ChatHeader } from '@/components/chat/chat-header'
@@ -31,11 +32,11 @@ import {
   resetChatAppearance,
   saveChatAppearance
 } from '@/store/chat-appearance-database'
+import { DEFAULT_CHAT_APPEARANCE, type ChatAppearancePreference } from '@/utils/chat-appearance'
 import {
-  CHAT_WALLPAPERS,
-  DEFAULT_CHAT_APPEARANCE,
-  type ChatAppearancePreference
-} from '@/utils/chat-appearance'
+  deleteCustomChatWallpaper,
+  persistCustomChatWallpaper
+} from '@/utils/custom-chat-wallpaper'
 import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report'
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
@@ -44,11 +45,11 @@ import type { BookmarkRecord } from '@/utils/bookmarks'
 import type { ChatDateTarget } from '@/utils/chat-calendar'
 import { Ionicons } from '@expo/vector-icons'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
+import * as ImagePicker from 'expo-image-picker'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  ImageBackground,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewToken
@@ -80,6 +81,8 @@ export default function ChatScreen() {
   const [isInsightsOpen, setIsInsightsOpen] = useState(false)
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false)
+  const [isChoosingWallpaper, setIsChoosingWallpaper] = useState(false)
+  const choosingWallpaperRef = useRef(false)
   const [hapticsEnabled, setHapticsEnabled] = useState(isHapticFeedbackEnabled)
   const appearanceChatIdRef = useRef(chatData?.chatId ?? '')
   const [appearance, setAppearance] = useState<ChatAppearancePreference>(() =>
@@ -104,9 +107,6 @@ export default function ChatScreen() {
     () => buildParticipantColorMap(chatData?.participants ?? []),
     [chatData?.participants]
   )
-  const wallpaper =
-    CHAT_WALLPAPERS.find(option => option.id === appearance.wallpaper) ?? CHAT_WALLPAPERS[0]
-
   useEffect(() => {
     const chatId = chatData?.chatId ?? ''
     if (appearanceChatIdRef.current === chatId) return
@@ -127,9 +127,63 @@ export default function ChatScreen() {
   const resetAppearance = useCallback(() => {
     const chatId = chatData?.chatId
     if (!chatId) return
+    const customWallpaperUri = appearance.customWallpaperUri
     resetChatAppearance(chatId)
     setAppearance(DEFAULT_CHAT_APPEARANCE)
-  }, [chatData?.chatId])
+    deleteCustomChatWallpaper(customWallpaperUri)
+  }, [appearance.customWallpaperUri, chatData?.chatId])
+
+  const chooseCustomWallpaper = useCallback(async () => {
+    const chatId = chatData?.chatId
+    if (!chatId || choosingWallpaperRef.current) return
+
+    choosingWallpaperRef.current = true
+    setIsChoosingWallpaper(true)
+    let preparedWallpaperUri: string | null = null
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!permission.granted) {
+        Alert.alert('Photo access needed', 'Allow photo access to choose a custom chat wallpaper.')
+        return
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: false,
+        quality: 1
+      })
+      if (result.canceled || !result.assets[0]) return
+
+      const asset = result.assets[0]
+      const customWallpaperUri = await persistCustomChatWallpaper(chatId, asset)
+      preparedWallpaperUri = customWallpaperUri
+      if (appearanceChatIdRef.current !== chatId) {
+        deleteCustomChatWallpaper(customWallpaperUri)
+        preparedWallpaperUri = null
+        return
+      }
+
+      const previousCustomWallpaperUri = appearance.customWallpaperUri
+      const next: ChatAppearancePreference = {
+        ...appearance,
+        wallpaper: 'custom',
+        customWallpaperUri
+      }
+      saveChatAppearance(chatId, next)
+      setAppearance(next)
+      preparedWallpaperUri = null
+      if (previousCustomWallpaperUri !== customWallpaperUri) {
+        deleteCustomChatWallpaper(previousCustomWallpaperUri)
+      }
+    } catch (error) {
+      deleteCustomChatWallpaper(preparedWallpaperUri)
+      console.error('Failed to set custom chat wallpaper', error)
+      Alert.alert('Wallpaper unavailable', 'That photo could not be prepared as a wallpaper.')
+    } finally {
+      choosingWallpaperRef.current = false
+      setIsChoosingWallpaper(false)
+    }
+  }, [appearance, chatData?.chatId])
 
   const {
     items,
@@ -370,19 +424,8 @@ export default function ChatScreen() {
           />
 
           <View className='flex-1'>
-            <ImageBackground
-              source={require('@/assets/images/wallpaper.jpeg')}
-              style={{ flex: 1, backgroundColor: wallpaper.backgroundColor }}
-              imageStyle={{ opacity: wallpaper.imageOpacity }}
-              resizeMode='cover'
-            >
-              {wallpaper.overlayColor !== 'transparent' ? (
-                <View
-                  pointerEvents='none'
-                  className='absolute inset-0'
-                  style={{ backgroundColor: wallpaper.overlayColor }}
-                />
-              ) : null}
+            <View className='flex-1 bg-[#0B141A]'>
+              <ChatWallpaperBackground preference={appearance} />
               {!isInitialLoading && (
                 <FlashList
                   ref={flashListRef}
@@ -467,7 +510,7 @@ export default function ChatScreen() {
                   <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
                 </Pressable>
               )}
-            </ImageBackground>
+            </View>
 
             <ChatComposer />
 
@@ -579,7 +622,9 @@ export default function ChatScreen() {
             {isAppearanceOpen && (
               <ChatAppearance
                 preference={appearance}
+                isChoosingWallpaper={isChoosingWallpaper}
                 onChange={updateAppearance}
+                onChooseCustomWallpaper={chooseCustomWallpaper}
                 onReset={resetAppearance}
                 onClose={() => setIsAppearanceOpen(false)}
               />

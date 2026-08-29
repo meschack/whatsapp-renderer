@@ -146,6 +146,11 @@ describe('archive bootstrap', () => {
       )
     ).toEqual({ name: 'chat_appearance' })
     expect(
+      (await database.all<{ name: string }>('PRAGMA table_info(chat_appearance)')).map(
+        column => column.name
+      )
+    ).toEqual(expect.arrayContaining(['customWallpaperUri', 'wallpaperDimming']))
+    expect(
       await database.first<{ name: string }>(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'chat_sources'"
       )
