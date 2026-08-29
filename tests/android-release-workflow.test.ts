@@ -7,7 +7,7 @@ const workflow = readFileSync(
   'utf8'
 )
 
-describe('Android release workflow', () => {
+describe('Kinsay release workflow', () => {
   it('runs automatically whenever main is updated', () => {
     expect(workflow).toMatch(/push:\n\s+branches:\n\s+- main/)
   })
@@ -16,5 +16,12 @@ describe('Android release workflow', () => {
     expect(workflow).toContain('tag=kinsay-build-$GITHUB_RUN_NUMBER')
     expect(workflow).toContain('prerelease=true')
     expect(workflow).toContain('gh release create')
+  })
+
+  it('publishes the unsigned iOS build in the same release', () => {
+    expect(workflow).toContain('build-ios:')
+    expect(workflow).toContain('name: Build unsigned IPA')
+    expect(workflow).toContain('name: kinsay-ios-unsigned')
+    expect(workflow).toContain('needs: [build, build-ios]')
   })
 })
