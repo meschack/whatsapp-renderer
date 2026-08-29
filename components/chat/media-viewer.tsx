@@ -4,7 +4,13 @@ import { Image } from 'expo-image'
 import { File } from 'expo-file-system'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, type ViewToken, useWindowDimensions } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  type ViewToken,
+  useWindowDimensions
+} from 'react-native'
 import { Pressable, Text, View } from '@/src/tw'
 import { MediaFileActionError, saveMediaFile, shareMediaFile } from '@/utils/media-file-actions'
 import { getSafeMediaFilename } from '@/utils/media-file'
@@ -45,6 +51,14 @@ export function MediaViewer({
     0,
     records.findIndex(item => item.sequence === initialSequence)
   )
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose()
+      return true
+    })
+    return () => subscription.remove()
+  }, [onClose])
 
   const handleViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken<AttachmentRecord>[] }) => {
@@ -94,77 +108,75 @@ export function MediaViewer({
   }, [isSharing, record])
 
   return (
-    <Modal visible animationType='fade' statusBarTranslucent onRequestClose={onClose}>
-      <View className='flex-1 bg-black'>
-        <View className='absolute top-0 right-0 left-0 z-10 flex-row items-center bg-black/75 px-2 pt-3 pb-2'>
-          <Pressable
-            accessibilityLabel='Close media viewer'
-            className='size-11 items-center justify-center'
-            onPress={onClose}
-          >
-            <Ionicons name='close' size={28} color='#FFFFFF' />
-          </Pressable>
-          <View className='ml-1 flex-1'>
-            <Text className='text-[14px] font-medium text-white' numberOfLines={1}>
-              {title ?? (record ? getSafeMediaFilename(record) : 'Media unavailable')}
-            </Text>
-            <Text className='text-[11px] text-white/60' numberOfLines={1}>
-              {record
-                ? `${record.sender ?? 'System'} · ${record.timestamp.toLocaleString()}`
-                : 'The selected item is no longer loaded'}
-            </Text>
-          </View>
-          <Text className='mr-2 text-[11px] text-white/60'>
-            {index >= 0 ? `${index + 1}/${records.length}` : ''}
+    <View className='absolute inset-0 z-50 bg-black'>
+      <View className='absolute top-0 right-0 left-0 z-10 flex-row items-center bg-black/75 px-2 pt-3 pb-2'>
+        <Pressable
+          accessibilityLabel='Close media viewer'
+          className='size-11 items-center justify-center'
+          onPress={onClose}
+        >
+          <Ionicons name='close' size={28} color='#FFFFFF' />
+        </Pressable>
+        <View className='ml-1 flex-1'>
+          <Text className='text-[14px] font-medium text-white' numberOfLines={1}>
+            {title ?? (record ? getSafeMediaFilename(record) : 'Media unavailable')}
+          </Text>
+          <Text className='text-[11px] text-white/60' numberOfLines={1}>
+            {record
+              ? `${record.sender ?? 'System'} · ${record.timestamp.toLocaleString()}`
+              : 'The selected item is no longer loaded'}
           </Text>
         </View>
-
-        <FlashList
-          ref={listRef}
-          horizontal
-          pagingEnabled
-          data={records}
-          initialScrollIndex={initialIndex}
-          keyExtractor={item => item.messageId}
-          renderItem={({ item }) => (
-            <MediaSlide record={item} width={screenWidth} height={screenHeight} />
-          )}
-          showsHorizontalScrollIndicator={false}
-          maintainVisibleContentPosition={{
-            animateAutoScrollToBottom: false
-          }}
-          onViewableItemsChanged={handleViewableItemsChanged}
-          onStartReached={() => {
-            if (hasNewer) void loadNewer()
-          }}
-          onStartReachedThreshold={0.4}
-          onEndReached={() => {
-            if (hasOlder) void loadOlder()
-          }}
-          onEndReachedThreshold={0.4}
-        />
-
-        <View className='absolute right-0 bottom-0 left-0 z-10 flex-row items-center justify-around bg-black/75 px-3 pt-2 pb-4'>
-          <ViewerAction
-            label='Save'
-            icon='download-outline'
-            busy={isSaving}
-            onPress={() => void runSave()}
-          />
-          <ViewerAction
-            label='Share'
-            icon='share-outline'
-            busy={isSharing}
-            onPress={() => void runShare()}
-          />
-          <ViewerAction
-            label='Message'
-            icon='chatbubble-ellipses-outline'
-            onPress={() => record && onJump(record)}
-          />
-        </View>
+        <Text className='mr-2 text-[11px] text-white/60'>
+          {index >= 0 ? `${index + 1}/${records.length}` : ''}
+        </Text>
       </View>
-    </Modal>
+
+      <FlashList
+        ref={listRef}
+        horizontal
+        pagingEnabled
+        data={records}
+        initialScrollIndex={initialIndex}
+        keyExtractor={item => item.messageId}
+        renderItem={({ item }) => (
+          <MediaSlide record={item} width={screenWidth} height={screenHeight} />
+        )}
+        showsHorizontalScrollIndicator={false}
+        maintainVisibleContentPosition={{
+          animateAutoScrollToBottom: false
+        }}
+        onViewableItemsChanged={handleViewableItemsChanged}
+        onStartReached={() => {
+          if (hasNewer) void loadNewer()
+        }}
+        onStartReachedThreshold={0.4}
+        onEndReached={() => {
+          if (hasOlder) void loadOlder()
+        }}
+        onEndReachedThreshold={0.4}
+      />
+
+      <View className='absolute right-0 bottom-0 left-0 z-10 flex-row items-center justify-around bg-black/75 px-3 pt-2 pb-4'>
+        <ViewerAction
+          label='Save'
+          icon='download-outline'
+          busy={isSaving}
+          onPress={() => void runSave()}
+        />
+        <ViewerAction
+          label='Share'
+          icon='share-outline'
+          busy={isSharing}
+          onPress={() => void runShare()}
+        />
+        <ViewerAction
+          label='Message'
+          icon='chatbubble-ellipses-outline'
+          onPress={() => record && onJump(record)}
+        />
+      </View>
+    </View>
   )
 }
 

@@ -1,4 +1,5 @@
-import { ActivityIndicator, Modal } from 'react-native'
+import { ActivityIndicator, BackHandler } from 'react-native'
+import { useEffect } from 'react'
 
 import { useAttachmentPages } from '@/hooks/use-attachment-pages'
 import { View } from '@/src/tw'
@@ -23,13 +24,21 @@ export function ChatImageViewer({
   const { records, hasOlder, hasNewer, isInitialLoading, restoredSequence, loadOlder, loadNewer } =
     useAttachmentPages(chatId, 'image', { initialSequence, pageSize: 31 })
 
-  if (isInitialLoading || records.length === 0) {
+  const isLoading = isInitialLoading || records.length === 0
+  useEffect(() => {
+    if (!isLoading) return
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose()
+      return true
+    })
+    return () => subscription.remove()
+  }, [isLoading, onClose])
+
+  if (isLoading) {
     return (
-      <Modal visible animationType='fade' statusBarTranslucent onRequestClose={onClose}>
-        <View className='flex-1 items-center justify-center bg-black'>
-          <ActivityIndicator color='#FFFFFF' />
-        </View>
-      </Modal>
+      <View className='absolute inset-0 z-50 items-center justify-center bg-black'>
+        <ActivityIndicator color='#FFFFFF' />
+      </View>
     )
   }
 

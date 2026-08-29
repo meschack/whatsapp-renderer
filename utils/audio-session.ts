@@ -8,6 +8,19 @@ export const VOICE_PLAYBACK_AUDIO_MODE = {
   shouldRouteThroughEarpiece: false
 } satisfies Partial<AudioMode>
 
+export const AUDIO_SESSION_RELEASE_DELAY_MS = 150
+
+export async function releaseAudioSessionAfterPlaybackSettles(
+  deactivate: () => Promise<void>,
+  shouldRelease: () => boolean,
+  delayMs = AUDIO_SESSION_RELEASE_DELAY_MS
+): Promise<boolean> {
+  await new Promise<void>(resolve => setTimeout(resolve, delayMs))
+  if (!shouldRelease()) return false
+  await deactivate()
+  return true
+}
+
 export interface PendingAudioTransition {
   uri: string
   generation: number

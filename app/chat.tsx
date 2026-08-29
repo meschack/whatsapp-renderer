@@ -61,7 +61,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  InteractionManager,
   Platform,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -669,9 +668,7 @@ export default function ChatScreen() {
             onClose={() => setImageAlbumRecords(null)}
             onSelect={sequence => {
               setImageAlbumRecords(null)
-              void InteractionManager.runAfterInteractions(() => {
-                setImageViewerSequence(sequence)
-              })
+              setImageViewerSequence(sequence)
             }}
           />
         )}
