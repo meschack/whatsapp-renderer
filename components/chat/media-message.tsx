@@ -4,20 +4,22 @@ import { Image } from '@/src/tw/image'
 import { Ionicons } from '@expo/vector-icons'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import { memo, useCallback, useMemo } from 'react'
-import { Alert, Modal, useWindowDimensions } from 'react-native'
+import { Alert, useWindowDimensions } from 'react-native'
 import { AudioPlayer } from './audio-player'
 import { useRecyclingState } from '@shopify/flash-list'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { useChatAppearance } from './chat-appearance-context'
-import type { ChatTextScale } from '@/utils/chat-appearance'
 
 interface MediaMessageProps {
   message: Message
+  onOpenImage?: () => void
 }
 
-export const MediaMessage = memo(function MediaMessage({ message }: MediaMessageProps) {
-  const [imageModalVisible, setImageModalVisible] = useRecyclingState(false, [message.id])
+export const MediaMessage = memo(function MediaMessage({
+  message,
+  onOpenImage
+}: MediaMessageProps) {
   const { textScale } = useChatAppearance()
 
   if (!message.mediaType) return null
@@ -55,9 +57,7 @@ export const MediaMessage = memo(function MediaMessage({ message }: MediaMessage
           previewUri={message.mediaPreviewUri}
           width={message.mediaWidth}
           height={message.mediaHeight}
-          isModalVisible={imageModalVisible}
-          onOpenModal={() => setImageModalVisible(true)}
-          onCloseModal={() => setImageModalVisible(false)}
+          onOpen={onOpenImage}
         />
       )
     }
@@ -119,9 +119,7 @@ interface ChatImageProps {
   previewUri: string | null
   width: number | null
   height: number | null
-  isModalVisible: boolean
-  onOpenModal: () => void
-  onCloseModal: () => void
+  onOpen?: () => void
 }
 
 const ChatImage = memo(function ChatImage({
@@ -129,47 +127,21 @@ const ChatImage = memo(function ChatImage({
   previewUri,
   width,
   height,
-  isModalVisible,
-  onOpenModal,
-  onCloseModal
+  onOpen
 }: ChatImageProps) {
   const { width: screenWidth } = useWindowDimensions()
   const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
   const previewHeight = getPreviewHeight(previewWidth, width, height)
 
   return (
-    <>
-      <Pressable accessibilityLabel='Open image' accessibilityRole='button' onPress={onOpenModal}>
-        <Image
-          source={{ uri: previewUri ?? uri }}
-          recyclingKey={previewUri ?? uri}
-          className='rounded-lg object-cover'
-          style={{ width: previewWidth, height: previewHeight }}
-        />
-      </Pressable>
-      {isModalVisible && (
-        <Modal visible transparent animationType='fade' onRequestClose={onCloseModal}>
-          <Pressable
-            accessibilityLabel='Close image'
-            accessibilityRole='button'
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(0,0,0,0.95)',
-              justifyContent: 'center',
-              alignItems: 'center'
-            }}
-            onPress={onCloseModal}
-          >
-            <Image
-              source={{ uri }}
-              recyclingKey={`modal-${uri}`}
-              className='object-contain'
-              style={{ width: screenWidth, height: '80%' }}
-            />
-          </Pressable>
-        </Modal>
-      )}
-    </>
+    <Pressable accessibilityLabel='Open image' accessibilityRole='button' onPress={onOpen}>
+      <Image
+        source={{ uri: previewUri ?? uri }}
+        recyclingKey={previewUri ?? uri}
+        className='rounded-lg object-cover'
+        style={{ width: previewWidth, height: previewHeight }}
+      />
+    </Pressable>
   )
 })
 
@@ -178,7 +150,7 @@ const DocumentMessage = memo(function DocumentMessage({
   textScale
 }: {
   message: Message
-  textScale: ChatTextScale
+  textScale: number
 }) {
   const [busyAction, setBusyAction] = useRecyclingState<'open' | 'share' | null>(null, [message.id])
   const uriFilename = message.mediaUri?.split('/').pop()?.split(/[?#]/)[0] ?? null

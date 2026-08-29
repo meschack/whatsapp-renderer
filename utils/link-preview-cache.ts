@@ -195,7 +195,12 @@ async function readBoundedText(
   signal: AbortSignal
 ): Promise<string> {
   const reader = response.body?.getReader()
-  if (!reader) return ''
+  if (!reader) {
+    throwIfAborted(signal)
+    const text = await response.text()
+    throwIfAborted(signal)
+    return text.length <= maxBytes ? text : text.slice(0, maxBytes)
+  }
   const decoder = new TextDecoder()
   let html = ''
   let bytesRead = 0

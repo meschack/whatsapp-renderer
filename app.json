@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "whatsapp-renderer",
+    "name": "Kinsay",
     "slug": "whatsapp-renderer",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -37,6 +37,22 @@
       "expo-image",
       "expo-asset",
       "expo-sharing",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.5"
+          }
+        }
+      ],
       [
         "expo-image-picker",
         {

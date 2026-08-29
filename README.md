@@ -1,50 +1,37 @@
-# Welcome to your Expo app 👋
+# Kinsay
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Kinsay turns exported WhatsApp conversations into a fast, browsable local chat archive. Imports, messages, and media stay on the device; the app does not need an Expo development server after a release APK is installed.
 
-## Get started
+## Development
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Install dependencies and start Expo:
 
 ```bash
-npm run reset-project
+npm ci
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Useful checks:
 
-## Learn more
+```bash
+npx tsc --noEmit
+npm run lint
+npm test
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Android releases
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+The **Android release builds** GitHub Actions workflow creates signed builds for 32-bit ARM, 64-bit ARM, universal ARM, and the Play Store. Every successful run publishes these files on the repository's **Releases** page.
 
-## Join the community
+- `kinsay-universal-arm.apk` is the normal direct-install build for ARM Android phones.
+- `kinsay-armeabi-v7a.apk` targets older 32-bit ARM phones.
+- `kinsay-arm64-v8a.apk` targets modern 64-bit ARM phones.
+- `kinsay-play-store.aab` is for Play Store distribution and cannot be installed directly.
 
-Join our community of developers creating universal apps.
+Manual workflow runs become prereleases named `Kinsay build #…`. Pushing a tag matching `v*` creates a normal versioned release using that tag.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## iOS sideloading builds
+
+The **iOS unsigned build** workflow compiles `kinsay-ios-unsigned.ipa` on a macOS runner and adds it to the newest GitHub Release by default. The IPA is intentionally unsigned so SideStore or Sideloadly can sign it locally with the device owner's Apple Account.
+
+An unsigned IPA cannot be installed directly. With a free Apple Account, the locally signed application must be refreshed within Apple's seven-day provisioning window.

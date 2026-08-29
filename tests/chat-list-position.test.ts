@@ -1,4 +1,8 @@
-import { MAINTAIN_BOTTOM_POSITION, MAINTAIN_RESTORED_POSITION } from '../utils/chat-list-position'
+import {
+  MAINTAIN_BOTTOM_POSITION,
+  MAINTAIN_RESTORED_POSITION,
+  shouldShowVisibleDate
+} from '../utils/chat-list-position'
 import { describe, expect, it } from 'vitest'
 
 describe('chat list position policy', () => {
@@ -12,5 +16,10 @@ describe('chat list position policy', () => {
     expect(MAINTAIN_RESTORED_POSITION).toEqual({
       startRenderingFromBottom: false
     })
+  })
+
+  it('keeps the current visible message date present whenever a date is known', () => {
+    expect(shouldShowVisibleDate('Today')).toBe(true)
+    expect(shouldShowVisibleDate(null)).toBe(false)
   })
 })

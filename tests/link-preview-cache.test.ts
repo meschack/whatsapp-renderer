@@ -25,6 +25,16 @@ function previewResponse(title = 'Fetched title'): Response {
   })
 }
 
+function nativeTextOnlyResponse(title = 'Native fetched title'): Response {
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/html' }),
+    body: null,
+    text: vi.fn(async () => `<meta property="og:title" content="${title}">`)
+  } as unknown as Response
+}
+
 describe('extractOpenGraphData', () => {
   it('parses common metadata and resolves relative images', () => {
     const html = `
@@ -103,6 +113,16 @@ describe('privacy-safe link preview loader', () => {
     expect(success.expiresAt - 10_000).toBe(7 * 24 * 60 * 60 * 1_000)
     expect(failure.expiresAt - 10_000).toBe(24 * 60 * 60 * 1_000)
     expect(failure.data).toBeNull()
+  })
+
+  it('loads previews when the native fetch response has text but no readable stream', async () => {
+    const repository = createRepository()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(nativeTextOnlyResponse())
+    const loader = createLinkPreviewLoader({ repository, fetcher })
+
+    await expect(loader.load('https://example.com/native')).resolves.toMatchObject({
+      title: 'Native fetched title'
+    })
   })
 
   it('times out and persists a failure without confusing it with user cancellation', async () => {

@@ -7,7 +7,12 @@ import {
 } from '../utils/audio-presentation'
 import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/message-search'
 import { extractFirstUrl } from '../utils/message-links'
-import type { AttachmentFilter, AttachmentPage, AttachmentRecord } from '../utils/media-library'
+import type {
+  AttachmentFilter,
+  AttachmentPage,
+  AttachmentRecord,
+  InitialAttachmentPage
+} from '../utils/media-library'
 import type { BookmarkCursor, BookmarkPage, BookmarkRecord } from '../utils/bookmarks'
 import { getLocalDayBounds, type ChatDateTarget, type ChatDay } from '../utils/chat-calendar'
 import { getArchiveDatabase } from './archive-database'
@@ -174,25 +179,27 @@ function rowsToAttachmentPage(
   if (reverse) pageRows.reverse()
 
   return {
-    records: pageRows.map(
-      (row): AttachmentRecord => ({
-        sequence: row.id,
-        messageId: `msg-${row.id}`,
-        type: filter,
-        sender: row.sender,
-        timestamp: new Date(row.timestamp),
-        text: row.text,
-        mediaUri: row.mediaUri,
-        previewUri: row.mediaPreviewUri,
-        filename: row.mediaFilename,
-        size: row.mediaSize,
-        width: row.mediaWidth,
-        height: row.mediaHeight,
-        duration: row.mediaDuration,
-        url: filter === 'link' && row.text ? extractFirstUrl(row.text) : null
-      })
-    ),
+    records: pageRows.map(row => attachmentRowToRecord(row, filter)),
     hasMore
+  }
+}
+
+function attachmentRowToRecord(row: AttachmentRow, filter: AttachmentFilter): AttachmentRecord {
+  return {
+    sequence: row.id,
+    messageId: `msg-${row.id}`,
+    type: filter,
+    sender: row.sender,
+    timestamp: new Date(row.timestamp),
+    text: row.text,
+    mediaUri: row.mediaUri,
+    previewUri: row.mediaPreviewUri,
+    filename: row.mediaFilename,
+    size: row.mediaSize,
+    width: row.mediaWidth,
+    height: row.mediaHeight,
+    duration: row.mediaDuration,
+    url: filter === 'link' && row.text ? extractFirstUrl(row.text) : null
   }
 }
 
@@ -259,6 +266,54 @@ export async function getNewerAttachmentPage(
 ): Promise<AttachmentPage> {
   const rows = await queryAttachmentRows(chatId, filter, '>', afterSequence, 'ASC', limit)
   return rowsToAttachmentPage(rows, filter, limit, true)
+}
+
+export async function getInitialAttachmentPage(
+  chatId: string,
+  filter: AttachmentFilter,
+  limit: number,
+  preferredSequence?: number
+): Promise<InitialAttachmentPage> {
+  if (!preferredSequence) {
+    const page = await getOlderAttachmentPage(chatId, filter, null, limit)
+    return {
+      records: page.records,
+      hasOlder: page.hasMore,
+      hasNewer: false,
+      restoredSequence: null
+    }
+  }
+
+  const target = await getArchiveDatabase().getFirstAsync<AttachmentRow>(
+    `SELECT ${ATTACHMENT_COLUMNS}
+     FROM messages AS m
+     WHERE m.chatId = ? AND m.id = ?
+     LIMIT 1`,
+    chatId,
+    preferredSequence
+  )
+  const targetMatches =
+    target &&
+    (filter === 'link'
+      ? Boolean(target.text && extractFirstUrl(target.text))
+      : target.mediaType === filter)
+  if (!target || !targetMatches) return getInitialAttachmentPage(chatId, filter, limit)
+
+  const olderLimit = Math.floor((Math.max(1, limit) - 1) / 2)
+  const newerLimit = Math.max(1, limit) - 1 - olderLimit
+  const [olderRows, newerRows] = await Promise.all([
+    queryAttachmentRows(chatId, filter, '<', preferredSequence, 'DESC', olderLimit),
+    queryAttachmentRows(chatId, filter, '>', preferredSequence, 'ASC', newerLimit)
+  ])
+
+  const older = olderRows.slice(0, olderLimit)
+  const newer = newerRows.slice(0, newerLimit).reverse()
+  return {
+    records: [...newer, target, ...older].map(row => attachmentRowToRecord(row, filter)),
+    hasOlder: olderRows.length > olderLimit,
+    hasNewer: newerRows.length > newerLimit,
+    restoredSequence: preferredSequence
+  }
 }
 
 const MESSAGE_PAGE_COLUMNS = `id, sender, text, mediaType, mediaUri, mediaFilename, mediaSize,

@@ -4,6 +4,7 @@ import {
   CHAT_TEXT_SCALES,
   CHAT_WALLPAPERS,
   getCustomWallpaperResize,
+  getEffectiveChatTextScale,
   getChatTextMetrics,
   normalizeChatAppearance
 } from '../utils/chat-appearance'
@@ -54,5 +55,10 @@ describe('chat appearance', () => {
     expect(getCustomWallpaperResize(1080, 3200)).toEqual({ height: 2560 })
     expect(getCustomWallpaperResize(4032, 12000)).toEqual({ height: 2560 })
     expect(getCustomWallpaperResize(1080, 1920)).toBeNull()
+  })
+
+  it('adds optical compensation for chat typography on iOS only', () => {
+    expect(getEffectiveChatTextScale(1, 'ios')).toBe(1.12)
+    expect(getEffectiveChatTextScale(1, 'android')).toBe(1)
   })
 })
