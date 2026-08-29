@@ -8,6 +8,7 @@ import {
 import { getNextPlaybackRate } from '@/utils/audio-presentation'
 import {
   advancePendingAudioTransition,
+  releaseAudioSessionAfterPlaybackSettles,
   shouldRestorePlaybackRate,
   VOICE_PLAYBACK_AUDIO_MODE,
   type PendingAudioTransition
@@ -76,11 +77,20 @@ export function AudioPlayerProvider({
   }, [chatData?.chatName, player])
 
   const endPlaybackSession = useCallback(async () => {
+    const releaseIntent = playbackIntentRef.current
     intendsToPlayRef.current = false
-    playbackSessionActiveRef.current = false
     player.clearLockScreenControls()
     try {
-      await setIsAudioActiveAsync(false)
+      await releaseAudioSessionAfterPlaybackSettles(
+        async () => {
+          playbackSessionActiveRef.current = false
+          await setIsAudioActiveAsync(false)
+        },
+        () =>
+          playbackIntentRef.current === releaseIntent &&
+          !intendsToPlayRef.current &&
+          playbackSessionActiveRef.current
+      )
     } catch (error) {
       console.error('Failed to release voice playback audio focus', error)
     }
