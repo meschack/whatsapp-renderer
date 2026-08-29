@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { getNewerAttachmentPage, getOlderAttachmentPage } from '@/store/message-database'
+import {
+  getInitialAttachmentPage,
+  getNewerAttachmentPage,
+  getOlderAttachmentPage
+} from '@/store/message-database'
 import {
   mergeAttachmentWindow,
   type AttachmentFilter,
+  type InitialAttachmentPage,
   type AttachmentPage,
   type AttachmentRecord
 } from '@/utils/media-library'
@@ -12,6 +17,12 @@ const DEFAULT_PAGE_SIZE = 45
 const DEFAULT_MAX_RECORDS = 180
 
 interface AttachmentRepository {
+  initial(
+    chatId: string,
+    filter: AttachmentFilter,
+    limit: number,
+    preferredSequence?: number
+  ): Promise<InitialAttachmentPage>
   older(
     chatId: string,
     filter: AttachmentFilter,
@@ -27,6 +38,7 @@ interface AttachmentRepository {
 }
 
 const defaultRepository: AttachmentRepository = {
+  initial: getInitialAttachmentPage,
   older: getOlderAttachmentPage,
   newer: getNewerAttachmentPage
 }
@@ -34,6 +46,7 @@ const defaultRepository: AttachmentRepository = {
 interface AttachmentPagesOptions {
   pageSize?: number
   maxRecords?: number
+  initialSequence?: number
   repository?: AttachmentRepository
 }
 
@@ -44,8 +57,9 @@ export function useAttachmentPages(
 ) {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE
   const maxRecords = options.maxRecords ?? DEFAULT_MAX_RECORDS
+  const initialSequence = options.initialSequence
   const repository = options.repository ?? defaultRepository
-  const requestKey = `${chatId}\u0000${filter}`
+  const requestKey = `${chatId}\u0000${filter}\u0000${initialSequence ?? ''}`
   const [activeKey, setActiveKey] = useState(requestKey)
   const [records, setRecords] = useState<AttachmentRecord[]>([])
   const [hasOlder, setHasOlder] = useState(false)
@@ -53,6 +67,7 @@ export function useAttachmentPages(
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const [isLoadingNewer, setIsLoadingNewer] = useState(false)
+  const [restoredSequence, setRestoredSequence] = useState<number | null>(null)
   const recordsRef = useRef<AttachmentRecord[]>([])
   const hasOlderRef = useRef(false)
   const hasNewerRef = useRef(false)
@@ -84,6 +99,7 @@ export function useAttachmentPages(
     setHasNewer(false)
     setIsLoadingOlder(false)
     setIsLoadingNewer(false)
+    setRestoredSequence(null)
 
     if (!chatId) {
       setIsInitialLoading(false)
@@ -91,12 +107,13 @@ export function useAttachmentPages(
     }
 
     setIsInitialLoading(true)
-    void repository.older(chatId, filter, null, pageSize).then(
+    void repository.initial(chatId, filter, pageSize, initialSequence).then(
       page => {
         if (generationRef.current !== generation) return
         replaceRecords(page.records)
-        replaceHasOlder(page.hasMore)
-        replaceHasNewer(false)
+        replaceHasOlder(page.hasOlder)
+        replaceHasNewer(page.hasNewer)
+        setRestoredSequence(page.restoredSequence)
         setIsInitialLoading(false)
       },
       error => {
@@ -112,6 +129,7 @@ export function useAttachmentPages(
   }, [
     chatId,
     filter,
+    initialSequence,
     pageSize,
     repository,
     replaceHasNewer,
@@ -200,6 +218,7 @@ export function useAttachmentPages(
     isInitialLoading: isStale || isInitialLoading,
     isLoadingOlder,
     isLoadingNewer,
+    restoredSequence: isStale ? null : restoredSequence,
     loadOlder,
     loadNewer
   }

@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { useCallback, useEffect, useState } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { AudioPlayerProvider } from '@/components/chat/audio-player-provider'
 
 void SplashScreen.preventAutoHideAsync()
 
@@ -107,33 +108,35 @@ export default function RootLayout() {
         refreshSavedChats
       }}
     >
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: '#202C33' },
-          headerTintColor: '#E9EDEF',
-          contentStyle: { backgroundColor: '#0B141A' },
-          animation: 'slide_from_right',
-          headerTitleStyle: { fontFamily: 'Satoshi-Bold' }
-        }}
-      >
-        <Stack.Screen
-          name='index'
-          options={{
-            title: 'Chats',
-            headerTitleStyle: { color: '#E9EDEF', fontFamily: 'Satoshi-Bold' }
+      <AudioPlayerProvider>
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: '#202C33' },
+            headerTintColor: '#E9EDEF',
+            contentStyle: { backgroundColor: '#0B141A' },
+            animation: 'slide_from_right',
+            headerTitleStyle: { fontFamily: 'Satoshi-Bold' }
           }}
-        />
-        <Stack.Screen name='chat' options={{ headerShown: false }} />
-        <Stack.Screen
-          name='select-sender'
-          options={{
-            title: 'Who are you?',
-            presentation: 'modal',
-            headerTitleStyle: { color: '#E9EDEF', fontFamily: 'Satoshi-Bold' }
-          }}
-        />
-      </Stack>
-      <StatusBar style='light' />
+        >
+          <Stack.Screen
+            name='index'
+            options={{
+              title: 'Chats',
+              headerTitleStyle: { color: '#E9EDEF', fontFamily: 'Satoshi-Bold' }
+            }}
+          />
+          <Stack.Screen name='chat' options={{ headerShown: false }} />
+          <Stack.Screen
+            name='select-sender'
+            options={{
+              title: 'Who are you?',
+              presentation: 'modal',
+              headerTitleStyle: { color: '#E9EDEF', fontFamily: 'Satoshi-Bold' }
+            }}
+          />
+        </Stack>
+        <StatusBar style='light' />
+      </AudioPlayerProvider>
     </ChatContext.Provider>
   )
 }

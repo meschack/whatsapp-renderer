@@ -38,6 +38,14 @@
       "expo-asset",
       "expo-sharing",
       [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": true
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

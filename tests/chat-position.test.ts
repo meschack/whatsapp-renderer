@@ -15,6 +15,7 @@ import {
   getUnindexedMediaUris,
   hasUnindexedMedia,
   getBookmarkPage,
+  getInitialAttachmentPage,
   getNewerAttachmentPage,
   getOlderAttachmentPage,
   isMessageBookmarked,
@@ -177,9 +178,7 @@ describe('chat position restoration', () => {
       .run()
 
     await expect(hasUnindexedMedia('chat-1')).resolves.toBe(true)
-    await expect(getUnindexedMediaUris('chat-1')).resolves.toEqual(
-      new Set(['file:///voice.opus'])
-    )
+    await expect(getUnindexedMediaUris('chat-1')).resolves.toEqual(new Set(['file:///voice.opus']))
 
     await applyMediaAttachmentIndex('chat-1', {
       filename: 'voice.opus',
@@ -320,6 +319,17 @@ describe('media library pages', () => {
     })
     expect(newer.records.map(record => record.sequence)).toEqual([6, 4])
     expect(newer.hasMore).toBe(true)
+  })
+
+  it('opens a bounded image window around a chat image for horizontal swiping', async () => {
+    const page = await getInitialAttachmentPage('chat-1', 'image', 3, 4)
+
+    expect(page.records.map(record => record.sequence)).toEqual([6, 4, 2])
+    expect(page).toMatchObject({
+      restoredSequence: 4,
+      hasOlder: false,
+      hasNewer: true
+    })
   })
 
   it('filters documents and indexed links without scanning messages in JavaScript', async () => {

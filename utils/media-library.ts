@@ -24,6 +24,13 @@ export interface AttachmentPage {
   hasMore: boolean
 }
 
+export interface InitialAttachmentPage {
+  records: AttachmentRecord[]
+  hasOlder: boolean
+  hasNewer: boolean
+  restoredSequence: number | null
+}
+
 export interface AttachmentMergeResult {
   records: AttachmentRecord[]
   trimmedNewer: boolean

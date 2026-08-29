@@ -1,4 +1,5 @@
 import type { Message } from '../models/types'
+import { canJoinImageGroup, isGalleryImageMessage } from './image-gallery'
 
 export interface TimelineRecord {
   sequence: number
@@ -7,6 +8,14 @@ export interface TimelineRecord {
 
 export type TimelineItem =
   | { type: 'date'; id: string; date: string }
+  | {
+      type: 'image-group'
+      id: string
+      firstSequence: number
+      lastSequence: number
+      records: TimelineRecord[]
+      showSender: boolean
+    }
   | {
       type: 'message'
       id: string
@@ -51,7 +60,8 @@ export function buildTimelineItems(records: TimelineRecord[], now = new Date()):
   let previousMessage: Message | null = null
   let previousDay: string | null = null
 
-  for (const { sequence, message } of records) {
+  for (let index = 0; index < records.length; index += 1) {
+    const { sequence, message } = records[index]
     const day = localDayKey(message.timestamp)
     const startsDay = day !== previousDay
 
@@ -63,16 +73,39 @@ export function buildTimelineItems(records: TimelineRecord[], now = new Date()):
       })
     }
 
-    items.push({
-      type: 'message',
-      id: message.id,
-      sequence,
-      message,
-      showSender:
-        !message.isSystem &&
-        message.sender !== null &&
-        (startsDay || previousMessage?.sender !== message.sender)
-    })
+    const showSender =
+      !message.isSystem &&
+      message.sender !== null &&
+      (startsDay || previousMessage?.sender !== message.sender)
+
+    if (isGalleryImageMessage(message)) {
+      const group = [records[index]]
+      while (index + group.length < records.length) {
+        const candidate = records[index + group.length]
+        const previous = group[group.length - 1]
+        if (localDayKey(candidate.message.timestamp) !== day) break
+        if (!canJoinImageGroup(previous.message, candidate.message)) break
+        group.push(candidate)
+      }
+
+      if (group.length > 1) {
+        const last = group[group.length - 1]
+        items.push({
+          type: 'image-group',
+          id: `image-group-${sequence}-${last.sequence}`,
+          firstSequence: sequence,
+          lastSequence: last.sequence,
+          records: group,
+          showSender
+        })
+        previousMessage = last.message
+        previousDay = day
+        index += group.length - 1
+        continue
+      }
+    }
+
+    items.push({ type: 'message', id: message.id, sequence, message, showSender })
 
     previousMessage = message
     previousDay = day
