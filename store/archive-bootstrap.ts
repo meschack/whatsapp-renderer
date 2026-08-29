@@ -48,7 +48,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 15
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 16
 
 const migrations: Migration[] = [
   {
@@ -307,6 +307,20 @@ const migrations: Migration[] = [
         INSERT OR IGNORE INTO chat_sources (chatId, directoryUri, importedAt)
         SELECT id, extractDirUri, importedAt FROM saved_chats;
       `)
+    }
+  },
+  {
+    version: 16,
+    async migrate(database) {
+      const columns = await database.all<{ name: string }>('PRAGMA table_info(chat_appearance)')
+      if (!columns.some(column => column.name === 'customWallpaperUri')) {
+        await database.exec('ALTER TABLE chat_appearance ADD COLUMN customWallpaperUri TEXT')
+      }
+      if (!columns.some(column => column.name === 'wallpaperDimming')) {
+        await database.exec(
+          'ALTER TABLE chat_appearance ADD COLUMN wallpaperDimming REAL NOT NULL DEFAULT 0'
+        )
+      }
     }
   }
 ]

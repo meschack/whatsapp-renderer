@@ -52,6 +52,14 @@
             "deploymentTarget": "15.5"
           }
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Kinsay to use a photo as a chat wallpaper.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {
