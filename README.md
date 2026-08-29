@@ -21,7 +21,7 @@ npm test
 
 ## Android releases
 
-The **Android release builds** GitHub Actions workflow creates signed builds for 32-bit ARM, 64-bit ARM, universal ARM, and the Play Store. Every successful run publishes these files on the repository's **Releases** page.
+The **Android release builds** GitHub Actions workflow creates signed builds for 32-bit ARM, 64-bit ARM, universal ARM, and the Play Store. Every successful push to `main` publishes a prerelease tagged `kinsay-build-<run number>` on the repository's **Releases** page. Version tags matching `v*` publish stable releases, and the workflow can still be started manually.
 
 - `kinsay-universal-arm.apk` is the normal direct-install build for ARM Android phones.
 - `kinsay-armeabi-v7a.apk` targets older 32-bit ARM phones.
