@@ -10,7 +10,11 @@ import { useRecyclingState } from '@shopify/flash-list'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { useChatAppearance } from './chat-appearance-context'
-import { getChatMediaPreviewSize, getChatVideoPreviewSize } from '@/utils/chat-media-layout'
+import {
+  getChatMediaPreviewSize,
+  getChatVideoPreviewSize,
+  isStickerMediaUri
+} from '@/utils/chat-media-layout'
 
 interface MediaMessageProps {
   message: Message
@@ -35,7 +39,7 @@ export const MediaMessage = memo(function MediaMessage({
 
   switch (message.mediaType) {
     case 'image': {
-      if (isStickerUri(message.mediaUri)) {
+      if (isStickerMediaUri(message.mediaUri)) {
         return <Sticker uri={message.mediaUri} />
       }
       return (
@@ -95,19 +99,6 @@ const UnavailableMedia = memo(function UnavailableMedia({
     </View>
   )
 })
-
-function isStickerUri(uri: string): boolean {
-  const encodedFilename = uri.split('/').pop()?.split(/[?#]/)[0] ?? ''
-  let filename = encodedFilename
-
-  try {
-    filename = decodeURIComponent(encodedFilename)
-  } catch {
-    // A malformed URI should still render as an ordinary image, not crash the chat.
-  }
-
-  return /^(?:STK-|STICKER)/i.test(filename) && filename.toLowerCase().endsWith('.webp')
-}
 
 const STICKER_SIZE = 128
 

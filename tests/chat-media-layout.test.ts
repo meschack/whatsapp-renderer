@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { getChatMediaPreviewSize, getChatVideoPreviewSize } from '../utils/chat-media-layout'
+import {
+  getChatMediaPreviewSize,
+  getChatVideoPreviewSize,
+  getChatVisualBubbleWidth
+} from '../utils/chat-media-layout'
 
 describe('chat media preview layout', () => {
   it('matches WhatsApp-sized portrait media without cropping a 3:4 image', () => {
@@ -37,5 +41,10 @@ describe('chat media preview layout', () => {
       width: 250,
       height: 140.625
     })
+  })
+
+  it('keeps a captioned visual bubble locked to the media frame instead of stretching', () => {
+    expect(getChatVisualBubbleWidth(250)).toBe(258)
+    expect(getChatVisualBubbleWidth(196.875)).toBe(204.875)
   })
 })
