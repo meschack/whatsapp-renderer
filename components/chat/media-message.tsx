@@ -1,16 +1,20 @@
 import type { Message } from '@/models/types'
 import { Pressable, Text, View } from '@/src/tw'
 import { Image } from '@/src/tw/image'
+import {
+  getChatMediaPreviewSize,
+  getChatVideoPreviewSize,
+  isStickerMediaUri
+} from '@/utils/chat-media-layout'
+import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
+import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { Ionicons } from '@expo/vector-icons'
+import { useRecyclingState } from '@shopify/flash-list'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import { memo, useCallback, useMemo } from 'react'
 import { Alert, useWindowDimensions } from 'react-native'
 import { AudioPlayer } from './audio-player'
-import { useRecyclingState } from '@shopify/flash-list'
-import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
-import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { useChatAppearance } from './chat-appearance-context'
-import { getChatMediaPreviewSize, getChatVideoPreviewSize } from '@/utils/chat-media-layout'
 
 interface MediaMessageProps {
   message: Message
@@ -35,7 +39,7 @@ export const MediaMessage = memo(function MediaMessage({
 
   switch (message.mediaType) {
     case 'image': {
-      if (isStickerUri(message.mediaUri)) {
+      if (isStickerMediaUri(message.mediaUri)) {
         return <Sticker uri={message.mediaUri} />
       }
       return (

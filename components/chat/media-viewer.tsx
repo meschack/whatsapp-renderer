@@ -15,6 +15,8 @@ import { Pressable, Text, View } from '@/src/tw'
 import { MediaFileActionError, saveMediaFile, shareMediaFile } from '@/utils/media-file-actions'
 import { getSafeMediaFilename } from '@/utils/media-file'
 import type { AttachmentRecord } from '@/utils/media-library'
+import { getMediaViewerChromePadding } from '@/utils/media-viewer-layout'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 interface MediaViewerProps {
   title?: string
@@ -45,6 +47,8 @@ export function MediaViewer({
   const listRef = useRef<FlashListRef<AttachmentRecord>>(null)
   const activeSequenceRef = useRef(initialSequence)
   const { width: screenWidth, height: screenHeight } = useWindowDimensions()
+  const safeAreaInsets = useSafeAreaInsets()
+  const { headerPaddingTop, footerPaddingBottom } = getMediaViewerChromePadding(safeAreaInsets)
   const record = records.find(item => item.sequence === sequence) ?? null
   const index = records.findIndex(item => item.sequence === sequence)
   const initialIndex = Math.max(
@@ -109,7 +113,10 @@ export function MediaViewer({
 
   return (
     <View className='absolute inset-0 z-50 bg-black'>
-      <View className='absolute top-0 right-0 left-0 z-10 flex-row items-center bg-black/75 px-2 pt-3 pb-2'>
+      <View
+        className='absolute top-0 right-0 left-0 z-10 flex-row items-center bg-black/75 px-2 pb-2'
+        style={{ paddingTop: headerPaddingTop }}
+      >
         <Pressable
           accessibilityLabel='Close media viewer'
           className='size-11 items-center justify-center'
@@ -157,7 +164,10 @@ export function MediaViewer({
         onEndReachedThreshold={0.4}
       />
 
-      <View className='absolute right-0 bottom-0 left-0 z-10 flex-row items-center justify-around bg-black/75 px-3 pt-2 pb-4'>
+      <View
+        className='absolute right-0 bottom-0 left-0 z-10 flex-row items-center justify-around bg-black/75 px-3 pt-2'
+        style={{ paddingBottom: footerPaddingBottom }}
+      >
         <ViewerAction
           label='Save'
           icon='download-outline'

@@ -10,6 +10,13 @@ import { useRecyclingState } from '@shopify/flash-list'
 import { getMessageAccessibilityLabel } from '@/utils/accessibility'
 import { performHapticFeedback } from '@/utils/haptic-feedback'
 import { useChatAppearance } from './chat-appearance-context'
+import {
+  getChatMediaPreviewSize,
+  getChatVideoPreviewSize,
+  getChatVisualBubbleWidth,
+  isStickerMediaUri
+} from '@/utils/chat-media-layout'
+import { useWindowDimensions } from 'react-native'
 
 const MAX_CHARS = 500
 
@@ -34,6 +41,7 @@ export const ChatBubble = memo(function ChatBubble({
 }: ChatBubbleProps) {
   const isMine = message.isMine
   const { textScale } = useChatAppearance()
+  const { width: screenWidth } = useWindowDimensions()
   const hasMedia = message.mediaType !== null
   const hasText = message.text !== null && message.text.trim().length > 0
   const hasVisualMedia = message.mediaType === 'image' || message.mediaType === 'video'
@@ -43,6 +51,22 @@ export const ChatBubble = memo(function ChatBubble({
     message.mediaUri !== null &&
     (message.mediaType === 'image' || message.mediaType === 'video')
   const [expanded, setExpanded] = useRecyclingState(false, [message.id])
+
+  const visualBubbleWidth = useMemo(() => {
+    if (!message.mediaUri) return undefined
+
+    if (message.mediaType === 'image' && !isStickerMediaUri(message.mediaUri)) {
+      const preview = getChatMediaPreviewSize(screenWidth, message.mediaWidth, message.mediaHeight)
+      return getChatVisualBubbleWidth(preview.width)
+    }
+
+    if (message.mediaType === 'video') {
+      const preview = getChatVideoPreviewSize(screenWidth, message.mediaWidth, message.mediaHeight)
+      return getChatVisualBubbleWidth(preview.width)
+    }
+
+    return undefined
+  }, [message.mediaHeight, message.mediaType, message.mediaUri, message.mediaWidth, screenWidth])
 
   const isTruncatable = hasText && message.text!.length > MAX_CHARS
   const displayText = useMemo(() => {
@@ -98,7 +122,8 @@ export const ChatBubble = memo(function ChatBubble({
                 shadowRadius: 5,
                 elevation: 4
               }
-            : undefined
+            : undefined,
+          visualBubbleWidth === undefined ? undefined : { width: visualBubbleWidth }
         ]}
       >
         {showSenderName && message.sender ? (

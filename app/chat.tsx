@@ -47,6 +47,8 @@ import { formatImportDiagnosticsReport } from '@/utils/import-diagnostics-report
 import { createThrottledWriter } from '@/utils/throttled-writer'
 import { buildParticipantColorMap, shouldShowGroupSenderName } from '@/utils/participant-identity'
 import {
+  findPendingMessageJumpIndex,
+  findTimelineMessageIndex,
   MAINTAIN_BOTTOM_POSITION,
   MAINTAIN_RESTORED_POSITION,
   shouldShowVisibleDate
@@ -97,6 +99,7 @@ export default function ChatScreen() {
   const lastScrollState = useRef(false)
   const clearHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const benchmarkStarted = useRef(false)
+  const handledJumpRequestKey = useRef<number | null>(null)
   const { budget, profile } = useTimelineBudget()
   const { onPageLoad, onLoad, benchmarkEnabled, startBenchmark } = useChatPerformance(
     flashListRef,
@@ -223,15 +226,36 @@ export default function ChatScreen() {
 
   const initialScrollIndex = useMemo(() => {
     if (restoredSequence === null) return undefined
-    const index = items.findIndex(item => {
-      if (item.type === 'message') return item.sequence === restoredSequence
-      if (item.type === 'image-group') {
-        return restoredSequence >= item.firstSequence && restoredSequence <= item.lastSequence
-      }
-      return false
-    })
-    return index >= 0 ? index : undefined
+    return findTimelineMessageIndex(items, restoredSequence) ?? undefined
   }, [items, restoredSequence])
+
+  const pendingJumpIndex = useMemo(() => {
+    if (!jumpRequest) return null
+    return findPendingMessageJumpIndex(items, jumpRequest.sequence, restoredSequence)
+  }, [items, jumpRequest, restoredSequence])
+
+  const handleListLoad = useCallback(
+    (event: { elapsedTimeInMs: number }) => {
+      onLoad(event)
+      if (
+        !jumpRequest ||
+        pendingJumpIndex === null ||
+        handledJumpRequestKey.current === jumpRequest.key
+      ) {
+        return
+      }
+
+      handledJumpRequestKey.current = jumpRequest.key
+      requestAnimationFrame(() => {
+        void flashListRef.current?.scrollToIndex({
+          index: pendingJumpIndex,
+          animated: false,
+          viewPosition: 0.5
+        })
+      })
+    },
+    [jumpRequest, onLoad, pendingJumpIndex]
+  )
 
   useEffect(() => {
     if (!benchmarkEnabled || benchmarkStarted.current || items.length === 0) return
@@ -479,7 +503,7 @@ export default function ChatScreen() {
                 onStartReachedThreshold={0.35}
                 onEndReached={handleEndReached}
                 onEndReachedThreshold={0.2}
-                onLoad={onLoad}
+                onLoad={handleListLoad}
                 ListHeaderComponent={
                   isLoadingOlder ? (
                     <View className='items-center py-4'>
