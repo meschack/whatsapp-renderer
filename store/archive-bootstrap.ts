@@ -48,7 +48,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 16
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 17
 
 const migrations: Migration[] = [
   {
@@ -321,6 +321,63 @@ const migrations: Migration[] = [
           'ALTER TABLE chat_appearance ADD COLUMN wallpaperDimming REAL NOT NULL DEFAULT 0'
         )
       }
+    }
+  },
+  {
+    version: 17,
+    async migrate(database) {
+      await database.exec(`
+        UPDATE messages
+        SET text = NULLIF(
+          TRIM(SUBSTR(text, 16), CHAR(9) || CHAR(10) || CHAR(13) || ' '),
+          ''
+        )
+        WHERE mediaType IS NOT NULL
+          AND LOWER(SUBSTR(text, 1, 15)) IN ('(fichier joint)', '(file attached)');
+
+        UPDATE saved_chats
+        SET lastMessageText = NULLIF(
+          TRIM(SUBSTR(lastMessageText, 16), CHAR(9) || CHAR(10) || CHAR(13) || ' '),
+          ''
+        )
+        WHERE LOWER(SUBSTR(lastMessageText, 1, 15))
+          IN ('(fichier joint)', '(file attached)');
+
+        UPDATE messages
+        SET mediaType = COALESCE(mediaType, 'image'),
+            text = NULLIF(
+              TRIM(
+                CASE
+                  WHEN LOWER(SUBSTR(text, 1, 15)) = '<media omitted>' THEN SUBSTR(text, 16)
+                  WHEN LOWER(SUBSTR(text, 1, 13)) = '<médias omis>' THEN SUBSTR(text, 14)
+                  ELSE SUBSTR(text, 13)
+                END,
+                CHAR(9) || CHAR(10) || CHAR(13) || ' '
+              ),
+              ''
+            )
+        WHERE LOWER(SUBSTR(text, 1, 15)) = '<media omitted>'
+           OR LOWER(SUBSTR(text, 1, 13)) = '<médias omis>'
+           OR LOWER(SUBSTR(text, 1, 12)) = '<média omis>';
+
+        UPDATE saved_chats
+        SET lastMessageText = NULLIF(
+          TRIM(
+            CASE
+              WHEN LOWER(SUBSTR(lastMessageText, 1, 15)) = '<media omitted>'
+                THEN SUBSTR(lastMessageText, 16)
+              WHEN LOWER(SUBSTR(lastMessageText, 1, 13)) = '<médias omis>'
+                THEN SUBSTR(lastMessageText, 14)
+              ELSE SUBSTR(lastMessageText, 13)
+            END,
+            CHAR(9) || CHAR(10) || CHAR(13) || ' '
+          ),
+          ''
+        )
+        WHERE LOWER(SUBSTR(lastMessageText, 1, 15)) = '<media omitted>'
+           OR LOWER(SUBSTR(lastMessageText, 1, 13)) = '<médias omis>'
+           OR LOWER(SUBSTR(lastMessageText, 1, 12)) = '<média omis>';
+      `)
     }
   }
 ]

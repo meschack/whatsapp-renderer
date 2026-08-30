@@ -106,7 +106,7 @@ describe('parseWhatsAppChat', () => {
     ])
   })
 
-  it('drops localized omitted-media placeholders without dropping real attachments', () => {
+  it('keeps localized omitted media as an unavailable attachment', () => {
     const content = [
       '13/05/2026, 08:00 - Alice: <Médias omis>',
       '13/05/2026, 08:01 - Bob: photo.jpg (fichier joint)'
@@ -115,8 +115,43 @@ describe('parseWhatsAppChat', () => {
 
     const result = parseWhatsAppChat(content, media, 'Alice')
 
-    expect(result.messages).toHaveLength(1)
-    expect(result.messages[0]).toMatchObject({ mediaUri: 'file:///chat/photo.jpg', text: null })
+    expect(result.messages).toHaveLength(2)
+    expect(result.messages[0]).toMatchObject({
+      mediaType: 'image',
+      mediaUri: null,
+      text: null
+    })
+    expect(result.messages[1]).toMatchObject({ mediaUri: 'file:///chat/photo.jpg', text: null })
+  })
+
+  it('removes an omitted-media marker while preserving its caption', () => {
+    const content = [
+      '13/05/2026, 08:00 - Alice: <Médias omis>',
+      'Tu penses que ton visage est comme ça'
+    ].join('\n')
+
+    const result = parseWhatsAppChat(content, new Map(), 'Alice')
+
+    expect(result.messages[0]).toMatchObject({
+      mediaType: 'image',
+      mediaUri: null,
+      text: 'Tu penses que ton visage est comme ça'
+    })
+  })
+
+  it('removes a localized attachment marker while preserving its caption', () => {
+    const content = [
+      '13/05/2026, 08:00 - Alice: photo.jpg (fichier joint)',
+      "Regarde comment j'ai de jolis yeux 😹"
+    ].join('\n')
+    const media = new Map([['photo.jpg', image('photo.jpg', 'file:///chat/photo.jpg')]])
+
+    const result = parseWhatsAppChat(content, media, 'Alice')
+
+    expect(result.messages[0]).toMatchObject({
+      mediaUri: 'file:///chat/photo.jpg',
+      text: "Regarde comment j'ai de jolis yeux 😹"
+    })
   })
 
   it('keeps recoverable records and reports each import diagnostic category exactly', () => {
@@ -129,8 +164,8 @@ describe('parseWhatsAppChat', () => {
 
     const result = parseWhatsAppChat(content, new Map(), 'Alice')
 
-    expect(result.messages).toHaveLength(1)
-    expect(result.messages[0]).toMatchObject({
+    expect(result.messages).toHaveLength(3)
+    expect(result.messages[1]).toMatchObject({
       sender: 'Bob',
       mediaType: 'document',
       mediaFilename: 'archive.rar',
@@ -141,14 +176,14 @@ describe('parseWhatsAppChat', () => {
       'unsupported-formats': 1,
       'ambiguous-dates': 3,
       'malformed-records': 1,
-      'skipped-content': 2
+      'skipped-content': 0
     })
-    expect(getImportDiagnosticTotal(result.diagnostics)).toBe(9)
-    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('9 import notices')
+    expect(getImportDiagnosticTotal(result.diagnostics)).toBe(7)
+    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('7 import notices')
     expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Missing files: 2')
     expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Unsupported formats: 1')
     expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Ambiguous dates: 3')
     expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Malformed records: 1')
-    expect(formatImportDiagnosticsReport(result.diagnostics)).toContain('Skipped content: 2')
+    expect(formatImportDiagnosticsReport(result.diagnostics)).not.toContain('Skipped content')
   })
 })
