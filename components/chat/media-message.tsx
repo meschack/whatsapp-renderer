@@ -10,7 +10,7 @@ import { useRecyclingState } from '@shopify/flash-list'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { useChatAppearance } from './chat-appearance-context'
-import { getChatMediaPreviewSize } from '@/utils/chat-media-layout'
+import { getChatMediaPreviewSize, getChatVideoPreviewSize } from '@/utils/chat-media-layout'
 
 interface MediaMessageProps {
   message: Message
@@ -276,7 +276,7 @@ const LazyVideoMessage = memo(function LazyVideoMessage({
 }: LazyVideoMessageProps) {
   const [activated, setActivated] = useRecyclingState(false, [uri])
   const { width: screenWidth } = useWindowDimensions()
-  const { width: previewWidth, height: previewHeight } = getChatMediaPreviewSize(
+  const { width: previewWidth, height: previewHeight } = getChatVideoPreviewSize(
     screenWidth,
     mediaWidth,
     mediaHeight
@@ -287,17 +287,19 @@ const LazyVideoMessage = memo(function LazyVideoMessage({
       <Pressable
         accessibilityLabel='Play video'
         accessibilityRole='button'
-        className='items-center justify-center overflow-hidden rounded-lg bg-black/50'
+        className='items-center justify-center overflow-hidden rounded-lg bg-black'
         style={{ width: previewWidth, height: previewHeight }}
         onPress={() => setActivated(true)}
       >
-        {previewUri && (
+        {previewUri ? (
           <Image
             source={{ uri: previewUri }}
             recyclingKey={previewUri}
-            className='absolute inset-0 object-cover'
+            className='absolute inset-0 object-contain'
             style={{ width: previewWidth, height: previewHeight }}
           />
+        ) : (
+          <VideoPoster uri={uri} width={previewWidth} height={previewHeight} />
         )}
         <View className='size-14 items-center justify-center rounded-full bg-white/20'>
           <Ionicons name='play' size={32} color='#FFFFFF' />
@@ -307,6 +309,30 @@ const LazyVideoMessage = memo(function LazyVideoMessage({
   }
 
   return <ActiveVideoPlayer uri={uri} width={previewWidth} height={previewHeight} />
+})
+
+const VideoPoster = memo(function VideoPoster({
+  uri,
+  width,
+  height
+}: {
+  uri: string
+  width: number
+  height: number
+}) {
+  const player = useVideoPlayer(uri, instance => {
+    instance.muted = true
+  })
+
+  return (
+    <VideoView
+      player={player}
+      style={{ position: 'absolute', width, height }}
+      contentFit='contain'
+      nativeControls={false}
+      pointerEvents='none'
+    />
+  )
 })
 
 function ActiveVideoPlayer({ uri, width, height }: { uri: string; width: number; height: number }) {
@@ -321,7 +347,7 @@ function ActiveVideoPlayer({ uri, width, height }: { uri: string; width: number;
       <VideoView
         player={player}
         style={{ width: '100%', height: '100%' }}
-        contentFit='cover'
+        contentFit='contain'
         nativeControls
       />
     </View>

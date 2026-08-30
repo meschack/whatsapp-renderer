@@ -21,3 +21,18 @@ export function getChatMediaPreviewSize(
 
   return { width, height }
 }
+
+export function getChatVideoPreviewSize(
+  screenWidth: number,
+  mediaWidth: number | null,
+  mediaHeight: number | null
+): ChatMediaPreviewSize {
+  const maxWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
+  if (!mediaWidth || !mediaHeight) {
+    return { width: maxWidth, height: maxWidth / MEDIA_ASPECT_RATIO }
+  }
+
+  const aspectRatio = mediaWidth / mediaHeight
+  const width = Math.min(maxWidth, MEDIA_MAX_HEIGHT * aspectRatio)
+  return { width, height: width / aspectRatio }
+}

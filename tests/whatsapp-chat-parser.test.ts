@@ -154,6 +154,31 @@ describe('parseWhatsAppChat', () => {
     })
   })
 
+  it('removes the localized attachment marker from video captions too', () => {
+    const content = [
+      '13/05/2026, 08:00 - Alice: VID-20260513-WA0001.mp4 (fichier joint)',
+      "C'était les plus jolies en fait"
+    ].join('\n')
+    const media = new Map<string, MediaAttachment>([
+      [
+        'VID-20260513-WA0001.mp4',
+        {
+          ...image('VID-20260513-WA0001.mp4', 'file:///chat/VID-20260513-WA0001.mp4'),
+          type: 'video',
+          duration: 8.4
+        }
+      ]
+    ])
+
+    const result = parseWhatsAppChat(content, media, 'Alice')
+
+    expect(result.messages[0]).toMatchObject({
+      mediaType: 'video',
+      mediaUri: 'file:///chat/VID-20260513-WA0001.mp4',
+      text: "C'était les plus jolies en fait"
+    })
+  })
+
   it('keeps recoverable records and reports each import diagnostic category exactly', () => {
     const content = [
       'This line is not a WhatsApp record',

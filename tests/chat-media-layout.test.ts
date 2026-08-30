@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getChatMediaPreviewSize } from '../utils/chat-media-layout'
+import { getChatMediaPreviewSize, getChatVideoPreviewSize } from '../utils/chat-media-layout'
 
 describe('chat media preview layout', () => {
   it('matches WhatsApp-sized portrait media without cropping a 3:4 image', () => {
@@ -25,6 +25,17 @@ describe('chat media preview layout', () => {
     expect(getChatMediaPreviewSize(393, 2400, 800)).toEqual({
       width: 250,
       height: 120
+    })
+  })
+
+  it('fits video inside the chat frame without changing its aspect ratio', () => {
+    expect(getChatVideoPreviewSize(393, 1080, 1920)).toEqual({
+      width: 196.875,
+      height: 350
+    })
+    expect(getChatVideoPreviewSize(393, 1920, 1080)).toEqual({
+      width: 250,
+      height: 140.625
     })
   })
 })
