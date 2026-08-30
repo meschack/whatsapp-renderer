@@ -1,20 +1,20 @@
 import type { Message } from '@/models/types'
 import { Pressable, Text, View } from '@/src/tw'
 import { Image } from '@/src/tw/image'
-import { Ionicons } from '@expo/vector-icons'
-import { useVideoPlayer, VideoView } from 'expo-video'
-import { memo, useCallback, useMemo } from 'react'
-import { Alert, useWindowDimensions } from 'react-native'
-import { AudioPlayer } from './audio-player'
-import { useRecyclingState } from '@shopify/flash-list'
-import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
-import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
-import { useChatAppearance } from './chat-appearance-context'
 import {
   getChatMediaPreviewSize,
   getChatVideoPreviewSize,
   isStickerMediaUri
 } from '@/utils/chat-media-layout'
+import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
+import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
+import { Ionicons } from '@expo/vector-icons'
+import { useRecyclingState } from '@shopify/flash-list'
+import { useVideoPlayer, VideoView } from 'expo-video'
+import { memo, useCallback, useMemo } from 'react'
+import { Alert, useWindowDimensions } from 'react-native'
+import { AudioPlayer } from './audio-player'
+import { useChatAppearance } from './chat-appearance-context'
 
 interface MediaMessageProps {
   message: Message
@@ -99,6 +99,19 @@ const UnavailableMedia = memo(function UnavailableMedia({
     </View>
   )
 })
+
+function isStickerUri(uri: string): boolean {
+  const encodedFilename = uri.split('/').pop()?.split(/[?#]/)[0] ?? ''
+  let filename = encodedFilename
+
+  try {
+    filename = decodeURIComponent(encodedFilename)
+  } catch {
+    // A malformed URI should still render as an ordinary image, not crash the chat.
+  }
+
+  return /^(?:STK-|STICKER)/i.test(filename) && filename.toLowerCase().endsWith('.webp')
+}
 
 const STICKER_SIZE = 128
 
