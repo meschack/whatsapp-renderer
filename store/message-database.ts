@@ -7,6 +7,7 @@ import {
 } from '../utils/audio-presentation'
 import { buildSearchExpression, HIGHLIGHT_END, HIGHLIGHT_START } from '../utils/message-search'
 import { extractFirstUrl } from '../utils/message-links'
+import { whatsAppExportMarkers } from '../utils/whatsapp-export-markers'
 import type {
   AttachmentFilter,
   AttachmentPage,
@@ -43,11 +44,15 @@ interface MessageRow {
 }
 
 function rowToMessage(row: MessageRow): Message {
+  const normalized = whatsAppExportMarkers.normalizeStoredMessage({
+    text: row.text,
+    mediaType: row.mediaType as Message['mediaType']
+  })
   return {
     id: `msg-${row.id}`,
     sender: row.sender,
-    text: row.text,
-    mediaType: row.mediaType as Message['mediaType'],
+    text: normalized.text,
+    mediaType: normalized.mediaType,
     mediaUri: row.mediaUri,
     mediaFilename: row.mediaFilename,
     mediaSize: row.mediaSize,

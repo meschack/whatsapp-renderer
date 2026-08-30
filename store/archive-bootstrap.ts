@@ -1,6 +1,7 @@
 import type { SavedChat } from '../models/types'
 import { parseImportDiagnostics } from '../utils/import-diagnostics'
 import { stripEditedMarker } from '../utils/message-text'
+import { whatsAppExportMarkers } from '../utils/whatsapp-export-markers'
 
 export type ArchiveBindValue = string | number | null
 
@@ -48,7 +49,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 17
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 16
 
 const migrations: Migration[] = [
   {
@@ -322,63 +323,6 @@ const migrations: Migration[] = [
         )
       }
     }
-  },
-  {
-    version: 17,
-    async migrate(database) {
-      await database.exec(`
-        UPDATE messages
-        SET text = NULLIF(
-          TRIM(SUBSTR(text, 16), CHAR(9) || CHAR(10) || CHAR(13) || ' '),
-          ''
-        )
-        WHERE mediaType IS NOT NULL
-          AND LOWER(SUBSTR(text, 1, 15)) IN ('(fichier joint)', '(file attached)');
-
-        UPDATE saved_chats
-        SET lastMessageText = NULLIF(
-          TRIM(SUBSTR(lastMessageText, 16), CHAR(9) || CHAR(10) || CHAR(13) || ' '),
-          ''
-        )
-        WHERE LOWER(SUBSTR(lastMessageText, 1, 15))
-          IN ('(fichier joint)', '(file attached)');
-
-        UPDATE messages
-        SET mediaType = COALESCE(mediaType, 'image'),
-            text = NULLIF(
-              TRIM(
-                CASE
-                  WHEN LOWER(SUBSTR(text, 1, 15)) = '<media omitted>' THEN SUBSTR(text, 16)
-                  WHEN LOWER(SUBSTR(text, 1, 13)) = '<médias omis>' THEN SUBSTR(text, 14)
-                  ELSE SUBSTR(text, 13)
-                END,
-                CHAR(9) || CHAR(10) || CHAR(13) || ' '
-              ),
-              ''
-            )
-        WHERE LOWER(SUBSTR(text, 1, 15)) = '<media omitted>'
-           OR LOWER(SUBSTR(text, 1, 13)) = '<médias omis>'
-           OR LOWER(SUBSTR(text, 1, 12)) = '<média omis>';
-
-        UPDATE saved_chats
-        SET lastMessageText = NULLIF(
-          TRIM(
-            CASE
-              WHEN LOWER(SUBSTR(lastMessageText, 1, 15)) = '<media omitted>'
-                THEN SUBSTR(lastMessageText, 16)
-              WHEN LOWER(SUBSTR(lastMessageText, 1, 13)) = '<médias omis>'
-                THEN SUBSTR(lastMessageText, 14)
-              ELSE SUBSTR(lastMessageText, 13)
-            END,
-            CHAR(9) || CHAR(10) || CHAR(13) || ' '
-          ),
-          ''
-        )
-        WHERE LOWER(SUBSTR(lastMessageText, 1, 15)) = '<media omitted>'
-           OR LOWER(SUBSTR(lastMessageText, 1, 13)) = '<médias omis>'
-           OR LOWER(SUBSTR(lastMessageText, 1, 12)) = '<média omis>';
-      `)
-    }
   }
 ]
 
@@ -444,6 +388,7 @@ async function loadSavedChats(database: ArchiveDatabase): Promise<SavedChat[]> {
 
   return rows.map(row => ({
     ...row,
+    lastMessageText: whatsAppExportMarkers.normalizeStoredPreview(row.lastMessageText),
     participants: JSON.parse(row.participants) as string[],
     importDiagnostics: parseImportDiagnostics(row.importDiagnostics),
     isPinned: row.isPinned === 1,

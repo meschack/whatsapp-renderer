@@ -2,6 +2,7 @@ import type { ImportDiagnostics, MediaMap, Message } from '../models/types'
 import { createImportDiagnostics, recordImportDiagnostic } from './import-diagnostics'
 import { getMediaType } from './media-file'
 import { stripEditedMarker } from './message-text'
+import { whatsAppExportMarkers } from './whatsapp-export-markers'
 
 type DateOrder = 'DMY' | 'MDY'
 
@@ -55,11 +56,6 @@ const SENDER_MESSAGE_REGEX = /^([^:]+?):\s([\s\S]*)$/
 
 const MEDIA_FILENAME_REGEX =
   /\b[\w-]+\.(?:jpg|jpeg|png|gif|webp|mp4|mkv|avi|mov|3gp|opus|mp3|m4a|ogg|aac|pdf|doc|docx|xls|xlsx|ppt|pptx|vcf|zip)\b/gi
-
-const OMITTED_MEDIA_REGEX = /^<(?:Media omitted|M[ée]dias? omis)>(?:\r?\n([\s\S]*))?$/i
-const ATTACHED_ANGLE_REGEX = /^<(?:attached|pi[èe]ce jointe)\s*:\s*(.+?)>(?:\r?\n([\s\S]*))?$/i
-const ATTACHED_SUFFIX_REGEX = /^(.+?)\s*\((?:file attached|fichier joint)\)(?:\r?\n([\s\S]*))?$/i
-const LEADING_ATTACHED_MARKER_REGEX = /^\s*\((?:file attached|fichier joint)\)\s*/i
 
 function matchMessageStart(line: string): MessageStart | null {
   for (const pattern of MESSAGE_START_PATTERNS) {
@@ -285,19 +281,18 @@ const EMPTY_MEDIA = {
 function detectMedia(text: string, mediaMap: MediaMap, diagnostics: ImportDiagnostics) {
   const stripped = text.replace(INVISIBLE_CHARS, '').trim()
 
-  const omittedMedia = stripped.match(OMITTED_MEDIA_REGEX)
-  if (omittedMedia) {
+  const exportMarker = whatsAppExportMarkers.match(stripped)
+  if (exportMarker?.kind === 'omitted-media') {
     recordImportDiagnostic(diagnostics, 'missing-files', stripped.split(/\r?\n/, 1)[0])
     return {
       ...EMPTY_MEDIA,
       mediaType: 'image' as const,
-      cleanText: omittedMedia[1]?.trim() || null
+      cleanText: exportMarker.caption
     }
   }
 
-  const angleAttached = stripped.match(ATTACHED_ANGLE_REGEX)
-  if (angleAttached) {
-    const filename = angleAttached[1].trim()
+  if (exportMarker?.kind === 'attached-file') {
+    const { filename } = exportMarker
     if (!mediaMap.has(filename)) {
       recordImportDiagnostic(
         diagnostics,
@@ -305,20 +300,7 @@ function detectMedia(text: string, mediaMap: MediaMap, diagnostics: ImportDiagno
         filename
       )
     }
-    return { ...mediaForFilename(filename, mediaMap), cleanText: angleAttached[2]?.trim() || null }
-  }
-
-  const suffixAttached = stripped.match(ATTACHED_SUFFIX_REGEX)
-  if (suffixAttached) {
-    const filename = suffixAttached[1].trim()
-    if (!mediaMap.has(filename)) {
-      recordImportDiagnostic(
-        diagnostics,
-        getMediaType(filename) ? 'missing-files' : 'unsupported-formats',
-        filename
-      )
-    }
-    return { ...mediaForFilename(filename, mediaMap), cleanText: suffixAttached[2]?.trim() || null }
+    return { ...mediaForFilename(filename, mediaMap), cleanText: exportMarker.caption }
   }
 
   if (mediaMap.has(stripped)) {
@@ -329,8 +311,7 @@ function detectMedia(text: string, mediaMap: MediaMap, diagnostics: ImportDiagno
   if (candidates) {
     for (const filename of candidates) {
       if (!mediaMap.has(filename)) continue
-      const cleanText =
-        stripped.replace(filename, '').replace(LEADING_ATTACHED_MARKER_REGEX, '').trim() || null
+      const cleanText = stripped.replace(filename, '').trim() || null
       return { ...mediaForFilename(filename, mediaMap), cleanText }
     }
   }

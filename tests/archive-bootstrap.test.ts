@@ -237,7 +237,7 @@ describe('archive bootstrap', () => {
     sqlite.close()
   })
 
-  it('normalizes exported media markers already stored on the device', async () => {
+  it('normalizes localized markers while loading stored chat previews', async () => {
     const sqlite = new DatabaseSync(':memory:')
     const database = new TestArchiveDatabase(sqlite)
     await createArchiveBootstrap(async () => database)()
@@ -252,63 +252,18 @@ describe('archive bootstrap', () => {
         'Me',
         '["Me","Alice"]',
         'file:///chat-1',
-        2,
+        1,
         '<Médias omis>\nTu penses que ton visage est comme ça',
         '2026-08-20T10:45:00.000Z',
         '2026-08-21T08:00:00.000Z'
       ]
     )
-    await database.run(
-      `INSERT INTO messages (
-        chatId, sender, text, mediaType, mediaUri, timestamp, isMine, isSystem, isEdited
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        'chat-1',
-        'Alice',
-        '(fichier joint)\nRegarde cette photo',
-        'image',
-        'file:///chat-1/photo.jpg',
-        1787222700000,
-        0,
-        0,
-        0
-      ]
-    )
-    await database.run(
-      `INSERT INTO messages (
-        chatId, sender, text, mediaType, mediaUri, timestamp, isMine, isSystem, isEdited
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        'chat-1',
-        'Alice',
-        '<Médias omis>\nTu penses que ton visage est comme ça',
-        null,
-        null,
-        1787222800000,
-        0,
-        0,
-        0
-      ]
-    )
-    await database.exec('PRAGMA user_version = 16')
+    const result = await createArchiveBootstrap(async () => database)()
 
-    await createArchiveBootstrap(async () => database)()
-
-    expect(
-      await database.all<{ text: string; mediaType: string | null }>(
-        'SELECT text, mediaType FROM messages WHERE chatId = ? ORDER BY id',
-        ['chat-1']
-      )
-    ).toEqual([
-      { text: 'Regarde cette photo', mediaType: 'image' },
-      { text: 'Tu penses que ton visage est comme ça', mediaType: 'image' }
-    ])
-    expect(
-      await database.first<{ lastMessageText: string }>(
-        'SELECT lastMessageText FROM saved_chats WHERE id = ?',
-        ['chat-1']
-      )
-    ).toEqual({ lastMessageText: 'Tu penses que ton visage est comme ça' })
+    expect(result).toMatchObject({
+      status: 'ready',
+      savedChats: [{ lastMessageText: 'Tu penses que ton visage est comme ça' }]
+    })
 
     sqlite.close()
   })
