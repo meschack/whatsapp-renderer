@@ -9,7 +9,18 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.godwingbewezoun.whatsapprenderer"
+      "bundleIdentifier": "com.godwingbewezoun.whatsapprenderer",
+      "infoPlist": {
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "ZIP Archive",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": ["public.zip-archive", "com.pkware.zip-archive"]
+          }
+        ],
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
     },
     "android": {
       "versionCode": 3,
@@ -18,7 +29,31 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon-v2.png",
         "backgroundColor": "#06101C"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["DEFAULT", "BROWSABLE"],
+          "data": [
+            {
+              "scheme": "content",
+              "mimeType": "application/zip"
+            },
+            {
+              "scheme": "file",
+              "mimeType": "application/zip"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "application/x-zip-compressed"
+            },
+            {
+              "scheme": "file",
+              "mimeType": "application/x-zip-compressed"
+            }
+          ]
+        }
+      ]
     },
     "plugins": [
       "expo-router",

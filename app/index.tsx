@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Alert, FlatList } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Directory } from 'expo-file-system'
 import * as DocumentPicker from 'expo-document-picker'
 import { Ionicons } from '@expo/vector-icons'
@@ -35,6 +35,12 @@ import type { MediaMap, SavedChat } from '@/models/types'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
 import { getChatLibrarySections } from '@/utils/chat-library'
 import { ChatActionsSheet } from '@/components/home/chat-actions-sheet'
+import {
+  getIncomingArchiveName,
+  INCOMING_ARCHIVE_PARAM,
+  INCOMING_ARCHIVE_REQUEST_PARAM
+} from '@/utils/incoming-archive'
+import { stageIncomingArchiveFromDevice } from '@/utils/incoming-archive-device'
 
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
@@ -54,8 +60,18 @@ function cleanupStoredChatFiles(chat: SavedChat): void {
   for (const directoryUri of new Set(sources)) cleanupExtractedChat(directoryUri)
 }
 
+interface ArchiveImportRequest {
+  uri: string
+  name: string
+  needsStaging?: boolean
+}
+
 export default function HomeScreen() {
   const router = useRouter()
+  const incomingParams = useLocalSearchParams<{
+    [INCOMING_ARCHIVE_PARAM]?: string | string[]
+    [INCOMING_ARCHIVE_REQUEST_PARAM]?: string | string[]
+  }>()
   const insets = useSafeAreaInsets()
   const { setChatData, isLoading, setIsLoading, error, setError, savedChats, refreshSavedChats } =
     useChatStore()
@@ -64,91 +80,122 @@ export default function HomeScreen() {
   const [selectedChat, setSelectedChat] = useState<SavedChat | null>(null)
   const [showingArchived, setShowingArchived] = useState(false)
   const importControllerRef = useRef<AbortController | null>(null)
+  const handledIncomingArchiveRef = useRef<string | null>(null)
   const library = useMemo(() => getChatLibrarySections(savedChats), [savedChats])
 
-  const handleImport = useCallback(async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-      setStatusText('Picking file...')
-
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/zip',
-        copyToCacheDirectory: true
-      })
-
-      if (result.canceled) {
-        setIsLoading(false)
-        setStatusText('')
-        return
-      }
-
-      const pickedFile = result.assets[0]
-      if (!pickedFile) {
-        setIsLoading(false)
-        setStatusText('')
+  const runImport = useCallback(
+    async ({ uri, name, needsStaging = false }: ArchiveImportRequest) => {
+      if (importControllerRef.current) {
+        Alert.alert('Import already running', 'Wait for the current chat import to finish first.')
         return
       }
 
       const controller = new AbortController()
       importControllerRef.current = controller
+      setIsLoading(true)
+      setError(null)
       setIsImporting(true)
 
-      const { chat, outcome } = await importChat({
-        temporaryArchiveUri: pickedFile.uri,
-        archiveName: pickedFile.name ?? 'Chat.zip',
-        signal: controller.signal,
-        onProgress: ({ phase, completed, total, phaseCompleted, phaseTotal }) => {
-          const percentage = Math.round((completed / total) * 100)
-          const itemProgress =
-            phaseCompleted !== undefined && phaseTotal !== undefined
-              ? ` · ${phaseCompleted}/${phaseTotal}`
-              : ` · ${percentage}%`
-          setStatusText(`${IMPORT_STATUS_TEXT[phase]}${itemProgress}`)
+      try {
+        let archive = { uri, name }
+        if (needsStaging) {
+          setStatusText('Preparing shared archive…')
+          archive = await stageIncomingArchiveFromDevice(uri)
         }
-      })
 
-      setChatData({
-        chatId: chat.id,
-        participants: chat.participants,
-        chatName: chat.chatName,
-        myName: chat.myName,
-        extractDirUri: chat.extractDirUri,
-        messageCount: chat.messageCount,
-        importedAt: chat.importedAt,
-        archiveFingerprint: chat.archiveFingerprint,
-        importDiagnostics: chat.importDiagnostics
-      })
-      refreshSavedChats()
+        const { chat, outcome } = await importChat({
+          temporaryArchiveUri: archive.uri,
+          archiveName: archive.name,
+          signal: controller.signal,
+          onProgress: ({ phase, completed, total, phaseCompleted, phaseTotal }) => {
+            const percentage = Math.round((completed / total) * 100)
+            const itemProgress =
+              phaseCompleted !== undefined && phaseTotal !== undefined
+                ? ` · ${phaseCompleted}/${phaseTotal}`
+                : ` · ${percentage}%`
+            setStatusText(`${IMPORT_STATUS_TEXT[phase]}${itemProgress}`)
+          }
+        })
 
-      const diagnosticCount = chat.importDiagnostics
-        ? getImportDiagnosticTotal(chat.importDiagnostics)
-        : 0
-      if (outcome !== 'up-to-date' && diagnosticCount > 0) {
-        Alert.alert(
-          'Import completed with notices',
-          `${diagnosticCount} recoverable issue${diagnosticCount === 1 ? '' : 's'} found. ` +
-            'Open the chat and tap the yellow warning icon to view the report.'
-        )
+        setChatData({
+          chatId: chat.id,
+          participants: chat.participants,
+          chatName: chat.chatName,
+          myName: chat.myName,
+          extractDirUri: chat.extractDirUri,
+          messageCount: chat.messageCount,
+          importedAt: chat.importedAt,
+          archiveFingerprint: chat.archiveFingerprint,
+          importDiagnostics: chat.importDiagnostics
+        })
+        refreshSavedChats()
+
+        const diagnosticCount = chat.importDiagnostics
+          ? getImportDiagnosticTotal(chat.importDiagnostics)
+          : 0
+        if (outcome !== 'up-to-date' && diagnosticCount > 0) {
+          Alert.alert(
+            'Import completed with notices',
+            `${diagnosticCount} recoverable issue${diagnosticCount === 1 ? '' : 's'} found. ` +
+              'Open the chat and tap the yellow warning icon to view the report.'
+          )
+        }
+
+        setStatusText('')
+        setIsLoading(false)
+        setIsImporting(false)
+        importControllerRef.current = null
+        router.push(outcome === 'imported' ? '/select-sender' : '/chat')
+      } catch (err: unknown) {
+        const wasCancelled =
+          err instanceof ImportCancelledError || (err instanceof Error && err.name === 'AbortError')
+        const message = err instanceof Error ? err.message : 'An unknown error occurred'
+        setError(wasCancelled ? null : message)
+        setIsLoading(false)
+        setIsImporting(false)
+        importControllerRef.current = null
+        setStatusText('')
+        if (!wasCancelled) Alert.alert('Import Error', message)
       }
+    },
+    [refreshSavedChats, router, setChatData, setIsLoading, setError]
+  )
 
-      setStatusText('')
-      setIsLoading(false)
-      setIsImporting(false)
-      importControllerRef.current = null
-      router.push(outcome === 'imported' ? '/select-sender' : '/chat')
+  const handleImport = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/zip',
+        copyToCacheDirectory: true
+      })
+      const pickedFile = result.canceled ? null : result.assets[0]
+      if (!pickedFile) return
+
+      await runImport({ uri: pickedFile.uri, name: pickedFile.name ?? 'Chat.zip' })
     } catch (err: unknown) {
-      const wasCancelled =
-        err instanceof ImportCancelledError || (err instanceof Error && err.name === 'AbortError')
       const message = err instanceof Error ? err.message : 'An unknown error occurred'
-      setError(wasCancelled ? null : message)
-      setIsLoading(false)
-      setIsImporting(false)
-      importControllerRef.current = null
-      setStatusText('')
-      if (!wasCancelled) Alert.alert('Import Error', message)
+      Alert.alert('Import Error', message)
     }
-  }, [refreshSavedChats, router, setChatData, setIsLoading, setError])
+  }, [runImport])
+
+  const incomingArchive = incomingParams[INCOMING_ARCHIVE_PARAM]
+  const incomingArchiveUri = Array.isArray(incomingArchive) ? incomingArchive[0] : incomingArchive
+  const incomingRequest = incomingParams[INCOMING_ARCHIVE_REQUEST_PARAM]
+  const incomingRequestId = Array.isArray(incomingRequest) ? incomingRequest[0] : incomingRequest
+
+  useEffect(() => {
+    if (!incomingArchiveUri) return
+    const requestKey = `${incomingArchiveUri}\u0000${incomingRequestId ?? ''}`
+    if (handledIncomingArchiveRef.current === requestKey) return
+    handledIncomingArchiveRef.current = requestKey
+
+    const task = runImport({
+      uri: incomingArchiveUri,
+      name: getIncomingArchiveName(incomingArchiveUri),
+      needsStaging: true
+    })
+    router.replace('/')
+    void task
+  }, [incomingArchiveUri, incomingRequestId, router, runImport])
 
   const handleOpenChat = useCallback(
     async (chat: SavedChat) => {

@@ -36,6 +36,7 @@ export const ChatBubble = memo(function ChatBubble({
   const { textScale } = useChatAppearance()
   const hasMedia = message.mediaType !== null
   const hasText = message.text !== null && message.text.trim().length > 0
+  const hasVisualMedia = message.mediaType === 'image' || message.mediaType === 'video'
   const audioRendersOwnMeta = message.mediaType === 'audio' && !hasText
   const overlaysMeta =
     !hasText &&
@@ -73,7 +74,13 @@ export const ChatBubble = memo(function ChatBubble({
       <View
         className={cn(
           'relative max-w-[88%] min-w-16 rounded-xl',
-          audioRendersOwnMeta ? 'px-2.5 py-2' : hasMedia && !hasText ? 'p-1' : 'px-2.5 pt-1.5 pb-1',
+          hasVisualMedia
+            ? 'p-1'
+            : audioRendersOwnMeta
+              ? 'px-2.5 py-2'
+              : hasMedia && !hasText
+                ? 'p-1'
+                : 'px-2.5 pt-1.5 pb-1',
           isMine ? 'bg-wa-bubble-mine' : 'bg-wa-bubble-other'
         )}
         style={[
@@ -96,7 +103,7 @@ export const ChatBubble = memo(function ChatBubble({
       >
         {showSenderName && message.sender ? (
           <Text
-            className='mb-0.5 font-semibold'
+            className={cn('mb-0.5 font-semibold', hasVisualMedia && 'mx-1.5 mt-0.5')}
             numberOfLines={1}
             style={{ color: senderColor, fontSize: 12.5 * textScale }}
           >
@@ -112,7 +119,7 @@ export const ChatBubble = memo(function ChatBubble({
 
         {/* The timestamp is inline so it reserves space on the final text line. */}
         {hasText && displayText ? (
-          <View>
+          <View className={hasVisualMedia ? 'px-1.5 pt-1' : undefined}>
             <RichText
               text={displayText}
               isMine={isMine}

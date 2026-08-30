@@ -1,6 +1,7 @@
 import type { SavedChat } from '../models/types'
 import { parseImportDiagnostics } from '../utils/import-diagnostics'
 import { stripEditedMarker } from '../utils/message-text'
+import { whatsAppExportMarkers } from '../utils/whatsapp-export-markers'
 
 export type ArchiveBindValue = string | number | null
 
@@ -387,6 +388,7 @@ async function loadSavedChats(database: ArchiveDatabase): Promise<SavedChat[]> {
 
   return rows.map(row => ({
     ...row,
+    lastMessageText: whatsAppExportMarkers.normalizeStoredPreview(row.lastMessageText),
     participants: JSON.parse(row.participants) as string[],
     importDiagnostics: parseImportDiagnostics(row.importDiagnostics),
     isPinned: row.isPinned === 1,

@@ -8,6 +8,7 @@ import { readImageDimensions } from '@/utils/image-dimensions'
 import { deriveAudioWaveform, MAX_WAVEFORM_BYTES } from '@/utils/audio-waveform'
 import { MEDIA_PREVIEW_DIRECTORY } from '@/utils/media-file'
 import { getMediaPreviewFilename } from '@/utils/media-preview'
+import { loadVideoPreviewFrame } from '@/utils/video-preview'
 import type { MediaAttachment } from '@/models/types'
 import {
   createMediaIndexer,
@@ -79,7 +80,7 @@ async function createImagePreview(
 async function createVideoPreview(
   candidate: MediaCandidate,
   previewDirectory: Directory,
-  index: number
+  signal?: AbortSignal
 ): Promise<MediaInspection> {
   const player = createVideoPlayer(candidate.uri)
   let thumbnail: Awaited<ReturnType<typeof player.generateThumbnailsAsync>>[number] | null = null
@@ -88,19 +89,43 @@ async function createVideoPreview(
     ReturnType<ReturnType<typeof ImageManipulator.manipulate>['renderAsync']>
   > | null = null
   try {
-    const thumbnails = await player.generateThumbnailsAsync(0, {
-      maxWidth: PREVIEW_MAX_SIZE,
-      maxHeight: PREVIEW_MAX_SIZE
-    })
-    thumbnail = thumbnails[0] ?? null
-    if (!thumbnail) throw new Error(`Unable to generate a preview for ${candidate.filename}`)
-    const track = player.videoTrack
+    thumbnail = await loadVideoPreviewFrame(
+      {
+        isReady: () => player.status === 'readyToPlay' || player.videoTrack !== null,
+        subscribe(onReady, onError) {
+          const sourceLoad = player.addListener('sourceLoad', onReady)
+          const statusChange = player.addListener('statusChange', ({ status, error }) => {
+            if (status === 'readyToPlay') onReady()
+            else if (status === 'error') {
+              onError(new Error(error?.message ?? `Unable to load ${candidate.filename}`))
+            }
+          })
+          return () => {
+            sourceLoad.remove()
+            statusChange.remove()
+          }
+        },
+        async generate() {
+          const thumbnails = await player.generateThumbnailsAsync(0, {
+            maxWidth: PREVIEW_MAX_SIZE,
+            maxHeight: PREVIEW_MAX_SIZE
+          })
+          const frame = thumbnails[0] ?? null
+          if (!frame) throw new Error(`Unable to generate a preview for ${candidate.filename}`)
+          return frame
+        }
+      },
+      {
+        signal
+      }
+    )
     context = ImageManipulator.manipulate(thumbnail)
     rendered = await context.renderAsync()
     const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.76 })
     return {
-      width: track?.size.width ?? thumbnail.width,
-      height: track?.size.height ?? thumbnail.height,
+      // Thumbnail dimensions include the video's rotation transform; raw iOS track sizes do not.
+      width: thumbnail.width,
+      height: thumbnail.height,
       duration: player.duration > 0 ? player.duration : null,
       previewUri: persistPreview(saved.uri, previewDirectory, candidate.uri),
       waveform: null
@@ -176,7 +201,7 @@ export function createNativeMediaIndexer(directoryUri: string) {
         return createImagePreview(candidate, previewDirectory, index)
       }
       if (candidate.type === 'video') {
-        return createVideoPreview(candidate, previewDirectory, index)
+        return createVideoPreview(candidate, previewDirectory, signal)
       }
       if (candidate.type === 'audio') {
         const [duration, waveform] = await Promise.all([

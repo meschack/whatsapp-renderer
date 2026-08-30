@@ -2,6 +2,7 @@ import type { SavedChat } from '../models/types'
 import type { ChatUpdateMatch } from '../utils/chat-update-matcher'
 import { parseImportDiagnostics } from '../utils/import-diagnostics'
 import { getArchiveDatabase } from './archive-database'
+import { whatsAppExportMarkers } from '../utils/whatsapp-export-markers'
 
 interface SavedChatDatabaseRow extends Omit<
   SavedChat,
@@ -35,6 +36,7 @@ interface PersistedMessageRow {
 function deserializeSavedChat(row: SavedChatDatabaseRow): SavedChat {
   return {
     ...row,
+    lastMessageText: whatsAppExportMarkers.normalizeStoredPreview(row.lastMessageText),
     participants: JSON.parse(row.participants) as string[],
     importDiagnostics: parseImportDiagnostics(row.importDiagnostics),
     isPinned: row.isPinned === 1,

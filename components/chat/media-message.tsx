@@ -10,6 +10,7 @@ import { useRecyclingState } from '@shopify/flash-list'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { useChatAppearance } from './chat-appearance-context'
+import { getChatMediaPreviewSize, getChatVideoPreviewSize } from '@/utils/chat-media-layout'
 
 interface MediaMessageProps {
   message: Message
@@ -29,21 +30,7 @@ export const MediaMessage = memo(function MediaMessage({
   }
 
   if (!message.mediaUri) {
-    return (
-      <View className='flex-row items-center gap-2 py-2'>
-        <Ionicons
-          name={getMediaIcon(message.mediaType)}
-          size={20}
-          color={message.isMine ? '#E9EDEF' : '#8696A0'}
-        />
-        <Text
-          className={`italic ${message.isMine ? 'text-white/70' : 'text-wa-text-secondary'}`}
-          style={{ fontSize: 14 * textScale }}
-        >
-          {getMediaLabel(message.mediaType)}
-        </Text>
-      </View>
-    )
+    return <UnavailableMedia message={message} textScale={textScale} />
   }
 
   switch (message.mediaType) {
@@ -85,6 +72,30 @@ export const MediaMessage = memo(function MediaMessage({
   }
 })
 
+const UnavailableMedia = memo(function UnavailableMedia({
+  message,
+  textScale
+}: {
+  message: Message
+  textScale: number
+}) {
+  return (
+    <View className='min-h-24 w-[240px] flex-row items-center rounded-lg bg-black/15 px-3 py-3'>
+      <View className='size-12 items-center justify-center rounded-lg bg-black/20'>
+        <Ionicons name={getMediaIcon(message.mediaType)} size={25} color='#AEBAC1' />
+      </View>
+      <View className='ml-3 min-w-0 flex-1'>
+        <Text className='text-wa-text-primary font-medium' style={{ fontSize: 14 * textScale }}>
+          Media unavailable
+        </Text>
+        <Text className='text-wa-text-secondary mt-0.5' style={{ fontSize: 11.5 * textScale }}>
+          Not included in this export
+        </Text>
+      </View>
+    </View>
+  )
+})
+
 function isStickerUri(uri: string): boolean {
   const encodedFilename = uri.split('/').pop()?.split(/[?#]/)[0] ?? ''
   let filename = encodedFilename
@@ -97,9 +108,6 @@ function isStickerUri(uri: string): boolean {
 
   return /^(?:STK-|STICKER)/i.test(filename) && filename.toLowerCase().endsWith('.webp')
 }
-
-const MEDIA_MAX_WIDTH = 300
-const MEDIA_ASPECT_RATIO = 1.38
 
 const STICKER_SIZE = 128
 
@@ -130,8 +138,11 @@ const ChatImage = memo(function ChatImage({
   onOpen
 }: ChatImageProps) {
   const { width: screenWidth } = useWindowDimensions()
-  const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
-  const previewHeight = getPreviewHeight(previewWidth, width, height)
+  const { width: previewWidth, height: previewHeight } = getChatMediaPreviewSize(
+    screenWidth,
+    width,
+    height
+  )
 
   return (
     <Pressable accessibilityLabel='Open image' accessibilityRole='button' onPress={onOpen}>
@@ -265,25 +276,30 @@ const LazyVideoMessage = memo(function LazyVideoMessage({
 }: LazyVideoMessageProps) {
   const [activated, setActivated] = useRecyclingState(false, [uri])
   const { width: screenWidth } = useWindowDimensions()
-  const previewWidth = Math.min(MEDIA_MAX_WIDTH, screenWidth * 0.78)
-  const previewHeight = getPreviewHeight(previewWidth, mediaWidth, mediaHeight)
+  const { width: previewWidth, height: previewHeight } = getChatVideoPreviewSize(
+    screenWidth,
+    mediaWidth,
+    mediaHeight
+  )
 
   if (!activated) {
     return (
       <Pressable
         accessibilityLabel='Play video'
         accessibilityRole='button'
-        className='items-center justify-center overflow-hidden rounded-lg bg-black/50'
+        className='items-center justify-center overflow-hidden rounded-lg bg-black'
         style={{ width: previewWidth, height: previewHeight }}
         onPress={() => setActivated(true)}
       >
-        {previewUri && (
+        {previewUri ? (
           <Image
             source={{ uri: previewUri }}
             recyclingKey={previewUri}
-            className='absolute inset-0 object-cover'
+            className='absolute inset-0 object-contain'
             style={{ width: previewWidth, height: previewHeight }}
           />
+        ) : (
+          <VideoPoster uri={uri} width={previewWidth} height={previewHeight} />
         )}
         <View className='size-14 items-center justify-center rounded-full bg-white/20'>
           <Ionicons name='play' size={32} color='#FFFFFF' />
@@ -295,10 +311,29 @@ const LazyVideoMessage = memo(function LazyVideoMessage({
   return <ActiveVideoPlayer uri={uri} width={previewWidth} height={previewHeight} />
 })
 
-function getPreviewHeight(width: number, mediaWidth: number | null, mediaHeight: number | null) {
-  if (!mediaWidth || !mediaHeight) return width / MEDIA_ASPECT_RATIO
-  return Math.min(width * 1.25, Math.max(120, width * (mediaHeight / mediaWidth)))
-}
+const VideoPoster = memo(function VideoPoster({
+  uri,
+  width,
+  height
+}: {
+  uri: string
+  width: number
+  height: number
+}) {
+  const player = useVideoPlayer(uri, instance => {
+    instance.muted = true
+  })
+
+  return (
+    <VideoView
+      player={player}
+      style={{ position: 'absolute', width, height }}
+      contentFit='contain'
+      nativeControls={false}
+      pointerEvents='none'
+    />
+  )
+})
 
 function ActiveVideoPlayer({ uri, width, height }: { uri: string; width: number; height: number }) {
   const player = useVideoPlayer(uri)
@@ -312,7 +347,7 @@ function ActiveVideoPlayer({ uri, width, height }: { uri: string; width: number;
       <VideoView
         player={player}
         style={{ width: '100%', height: '100%' }}
-        contentFit='cover'
+        contentFit='contain'
         nativeControls
       />
     </View>
@@ -331,20 +366,5 @@ function getMediaIcon(type: Message['mediaType']): keyof typeof Ionicons.glyphMa
       return 'document'
     default:
       return 'attach'
-  }
-}
-
-function getMediaLabel(type: Message['mediaType']): string {
-  switch (type) {
-    case 'image':
-      return 'Photo'
-    case 'video':
-      return 'Video'
-    case 'audio':
-      return 'Voice message'
-    case 'document':
-      return 'Document'
-    default:
-      return 'Media'
   }
 }

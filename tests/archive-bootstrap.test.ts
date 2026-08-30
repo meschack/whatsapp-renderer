@@ -237,6 +237,37 @@ describe('archive bootstrap', () => {
     sqlite.close()
   })
 
+  it('normalizes localized markers while loading stored chat previews', async () => {
+    const sqlite = new DatabaseSync(':memory:')
+    const database = new TestArchiveDatabase(sqlite)
+    await createArchiveBootstrap(async () => database)()
+    await database.run(
+      `INSERT INTO saved_chats (
+        id, chatName, myName, participants, extractDirUri, messageCount,
+        lastMessageText, lastMessageTime, importedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'chat-1',
+        'Alice',
+        'Me',
+        '["Me","Alice"]',
+        'file:///chat-1',
+        1,
+        '<Médias omis>\nTu penses que ton visage est comme ça',
+        '2026-08-20T10:45:00.000Z',
+        '2026-08-21T08:00:00.000Z'
+      ]
+    )
+    const result = await createArchiveBootstrap(async () => database)()
+
+    expect(result).toMatchObject({
+      status: 'ready',
+      savedChats: [{ lastMessageText: 'Tu penses que ton visage est comme ça' }]
+    })
+
+    sqlite.close()
+  })
+
   it('returns a typed startup error and retries instead of caching the failure', async () => {
     const sqlite = new DatabaseSync(':memory:')
     const database = new TestArchiveDatabase(sqlite)
