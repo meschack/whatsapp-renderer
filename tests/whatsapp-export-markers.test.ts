@@ -21,6 +21,18 @@ describe('WhatsApp export marker module', () => {
       filename: 'photo.jpg',
       caption: null
     })
+    expect(
+      whatsAppExportMarkers.normalizeStoredMessage({
+        text: '(fichier joint)\nUne légende',
+        mediaType: 'image'
+      })
+    ).toEqual({ text: 'Une légende', mediaType: 'image' })
+    expect(
+      whatsAppExportMarkers.normalizeStoredMessage({
+        text: 'photo.jpg (fichier joint)',
+        mediaType: null
+      })
+    ).toEqual({ text: null, mediaType: 'image' })
   })
 
   it('adds another language by extending only the marker registry', () => {

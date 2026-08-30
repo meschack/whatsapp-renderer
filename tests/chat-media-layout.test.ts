@@ -16,4 +16,15 @@ describe('chat media preview layout', () => {
       height: 350
     })
   })
+
+  it('preserves ordinary landscape media and only crops extreme panoramas', () => {
+    expect(getChatMediaPreviewSize(393, 1600, 900)).toEqual({
+      width: 250,
+      height: 140.625
+    })
+    expect(getChatMediaPreviewSize(393, 2400, 800)).toEqual({
+      width: 250,
+      height: 120
+    })
+  })
 })
