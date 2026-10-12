@@ -599,22 +599,6 @@ export default function ChatScreen() {
           >
             <View className='flex-1 bg-[#0B141A]'>
               <ChatWallpaperBackground preference={appearance} />
-              {!!chatData.missingMediaSources && (
-                <Pressable
-                  accessibilityRole='button'
-                  className='bg-wa-header min-h-11 justify-center px-4'
-                  onPress={() =>
-                    Alert.alert(
-                      'Some attachments are missing',
-                      'Your messages have been kept. From the chat library, choose Repair media to select an export and restore missing files.'
-                    )
-                  }
-                >
-                  <Text className='text-wa-text-secondary text-sm'>
-                    Some attachments are missing. View repair options.
-                  </Text>
-                </Pressable>
-              )}
               {budgetReady && !isInitialLoading && loadError?.direction !== 'initial' && (
                 <FlashList
                   ref={flashListRef}
