@@ -1,0 +1,6 @@
+{
+  "name": "kinsay-passcode",
+  "version": "1.0.0",
+  "description": "Kinsay native background passcode derivation",
+  "license": "MIT"
+}

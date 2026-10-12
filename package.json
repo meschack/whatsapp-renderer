@@ -10,6 +10,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "vitest run",
+    "test:passcode-native": "node scripts/test-native-passcode.cjs",
     "lint": "expo lint",
     "postinstall": "node scripts/patch-flash-list.cjs",
     "benchmark:timeline": "node scripts/benchmark-timeline.cjs"

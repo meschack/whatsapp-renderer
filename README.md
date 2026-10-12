@@ -65,6 +65,11 @@ passcode** and confirmation. Changing or disabling it requires the existing
 Kinsay passcode. Optional biometric unlock returns to the Kinsay passcode when
 unavailable; the phone's PIN is never offered as an unlock method.
 
+Passcode checks use platform PBKDF2-HMAC-SHA256 on a native background worker,
+with 600,000 rounds. Existing passcodes remain compatible. This requires a
+native development or release build; Expo Go does not include the local
+`modules/kinsay-passcode` module.
+
 Verification data is salted and stored through SecureStore, and failed-attempt
 delays survive restarting the app. App-switcher protection is optional; on
 Android it also blocks screenshots. The lock controls access to app screens;

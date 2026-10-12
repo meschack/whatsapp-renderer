@@ -13,7 +13,19 @@ npm ci --include=dev
 npx tsc --noEmit
 npm run lint
 npm test
+npm run test:passcode-native
 ```
+
+The passcode check compiles the production Java derivation helper on Linux
+(JDK required), or the production CommonCrypto Swift helper on macOS (Xcode
+required). It checks reference vectors at both 600,000 and 1,000,000 rounds and
+rejects unsafe parameters. Release CI runs both platform checks. These checks
+do not start an emulator or simulator, and their timings are not device timings.
+
+Lock provider regressions check that enabling preview protection preserves the
+mounted screen and that the lock form centers through native styles without
+depending on CSS utilities. Test passcode speed and keyboard behavior again
+on a fresh native build on your phone.
 
 ## Native smoke runs
 

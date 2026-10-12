@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import {
@@ -10,7 +10,33 @@ import {
   verifyPasscode
 } from '../utils/passcode'
 
+const native = vi.hoisted(() => ({ deriveAsync: vi.fn() }))
+vi.mock('expo', async () => {
+  const { pbkdf2 } = await import('node:crypto')
+  native.deriveAsync.mockImplementation(
+    (pin: string, salt: string, rounds: number) =>
+      new Promise<string>((resolve, reject) => {
+        pbkdf2(pin, Buffer.from(salt, 'hex'), rounds, 32, 'sha256', (error, digest) => {
+          if (error) reject(error)
+          else resolve(digest.toString('hex'))
+        })
+      })
+  )
+  return { requireNativeModule: () => native, requireOptionalNativeModule: () => native }
+})
+
 describe('Kinsay passcode verifier', () => {
+  it('delegates all hash rounds to a worker without JavaScript timer batches', async () => {
+    native.deriveAsync.mockClear()
+    const timer = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      await createPasscodeVerifier('739182', new Uint8Array(16))
+      expect(timer.mock.calls.length).toBe(0)
+      expect(native.deriveAsync).toHaveBeenCalledWith('739182', '00'.repeat(16), 600_000)
+    } finally {
+      timer.mockRestore()
+    }
+  })
   it('matches PBKDF2-HMAC-SHA256 at 600,000 rounds and stores no plaintext', async () => {
     const pin = '739182'
     const salt = Uint8Array.from({ length: 16 }, (_, i) => i)
@@ -30,6 +56,16 @@ describe('Kinsay passcode verifier', () => {
     clearTimeout(timer)
     expect(yielded).toBe(true)
   }, 15_000)
+  it('propagates native worker failures and rejects malformed native digests', async () => {
+    native.deriveAsync.mockRejectedValueOnce(new Error('Native derivation failed'))
+    await expect(createPasscodeVerifier('739182', new Uint8Array(16))).rejects.toThrow(
+      'Native derivation failed'
+    )
+    native.deriveAsync.mockResolvedValueOnce('not-a-digest')
+    await expect(createPasscodeVerifier('739182', new Uint8Array(16))).rejects.toThrow(
+      'Passcode derivation failed'
+    )
+  })
   it('rejects weak format and unsafe persisted work factors', () => {
     expect(isValidPasscode('12345')).toBe(false)
     expect(isValidPasscode('123456')).toBe(true)

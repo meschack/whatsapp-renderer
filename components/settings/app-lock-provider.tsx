@@ -7,10 +7,11 @@ import {
   useState,
   type PropsWithChildren
 } from 'react'
-import { AppState, Platform } from 'react-native'
+import { AppState, Platform, StyleSheet } from 'react-native'
 import * as LocalAuthentication from 'expo-local-authentication'
 import * as ScreenCapture from 'expo-screen-capture'
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from '@/src/tw'
+import { View } from '@/src/tw'
+import { LockGate } from './app-lock-screen'
 import {
   clearAppLockAfterArchiveReset,
   getAppLockSettings,
@@ -149,135 +150,27 @@ export function AppLockProvider({
   return (
     <AppLockContext.Provider value={{ state: current, controller, privacyError }}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {canRead ? (
-          children
-        ) : (
-          <LockGate
-            state={current}
-            controller={controller}
-            privacyError={privacyError}
-            onResetAllData={onResetAllData ? recover : undefined}
-          />
-        )}
+        {current.status === 'unlocked' && !recovering ? (
+          <View
+            style={{ flex: 1, opacity: canRead ? 1 : 0 }}
+            pointerEvents={canRead ? 'auto' : 'none'}
+            accessibilityElementsHidden={!canRead}
+            importantForAccessibility={canRead ? 'auto' : 'no-hide-descendants'}
+          >
+            {children}
+          </View>
+        ) : null}
+        {!canRead ? (
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.background }]}>
+            <LockGate
+              state={current}
+              controller={controller}
+              privacyError={privacyError}
+              onResetAllData={onResetAllData ? recover : undefined}
+            />
+          </View>
+        ) : null}
       </View>
     </AppLockContext.Provider>
-  )
-}
-function LockGate({
-  state,
-  controller,
-  privacyError,
-  onResetAllData
-}: {
-  state: AppLockState
-  controller: AppLockController
-  privacyError: string | null
-  onResetAllData?: () => Promise<void>
-}) {
-  const [pin, setPin] = useState('')
-  const [now, setNow] = useState(Date.now)
-  const [resetError, setResetError] = useState<string | null>(null)
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  const waiting = Math.max(0, Math.ceil((state.record.cooldownUntil - now) / 1000))
-  const submit = async () => {
-    const entered = pin
-    setPin('')
-    await controller.unlock(entered)
-  }
-  return (
-    <ScrollView
-      accessibilityViewIsModal
-      keyboardShouldPersistTaps='handled'
-      className='bg-wa-bg flex-1'
-      contentContainerStyle={{ flexGrow: 1 }}
-      contentContainerClassName='items-center justify-center px-6 py-8'
-    >
-      <View className='w-full max-w-sm gap-4'>
-        <Text className='text-wa-text-primary text-2xl font-bold'>Kinsay is locked</Text>
-        {state.status === 'loading' || (state.status === 'unlocked' && !privacyError) ? (
-          <ActivityIndicator />
-        ) : (
-          <>
-            <Text className='text-wa-text-secondary'>
-              Use your Kinsay passcode. This is separate from your phone PIN.
-            </Text>
-            {state.status === 'locked' && !privacyError ? (
-              <>
-                <TextInput
-                  accessibilityLabel='Kinsay passcode'
-                  placeholder='6–12 digit Kinsay passcode'
-                  secureTextEntry
-                  keyboardType='number-pad'
-                  maxLength={12}
-                  value={pin}
-                  onChangeText={setPin}
-                  autoComplete='off'
-                  textContentType='none'
-                  className='bg-wa-input text-wa-text-primary min-h-12 rounded-xl px-4'
-                  editable={!state.busy && waiting === 0}
-                  onSubmitEditing={() => void submit()}
-                />
-                <Pressable
-                  accessibilityRole='button'
-                  disabled={state.busy || waiting > 0 || !pin}
-                  onPress={() => void submit()}
-                  className='bg-wa-accent min-h-12 items-center justify-center rounded-xl'
-                  style={{ opacity: state.busy || waiting > 0 ? 0.5 : 1 }}
-                >
-                  <Text className='text-wa-on-accent font-semibold'>
-                    {state.busy ? 'Checking…' : waiting ? `Try again in ${waiting}s` : 'Unlock'}
-                  </Text>
-                </Pressable>
-                {state.record.biometrics ? (
-                  <Pressable
-                    accessibilityRole='button'
-                    disabled={state.busy || waiting > 0}
-                    onPress={() => void controller.unlockBiometric()}
-                    className='min-h-11 items-center justify-center'
-                  >
-                    <Text className='text-wa-accent'>Unlock with biometrics</Text>
-                  </Pressable>
-                ) : null}
-              </>
-            ) : null}
-            {state.error || privacyError ? (
-              <Text className='text-wa-error'>{state.error ?? privacyError}</Text>
-            ) : null}
-            {state.status === 'error' ? (
-              <Pressable
-                accessibilityRole='button'
-                onPress={() => void controller.initialize()}
-                className='min-h-11 items-center justify-center'
-              >
-                <Text className='text-wa-accent'>Retry secure storage</Text>
-              </Pressable>
-            ) : null}
-            <Text className='text-wa-text-secondary text-xs'>
-              Forgot the passcode? Recovery requires deleting the local archive and importing your
-              exports again. Reinstalling may leave secure credentials on iOS.
-            </Text>
-            {onResetAllData ? (
-              <Pressable
-                accessibilityRole='button'
-                disabled={state.busy}
-                onPress={() => {
-                  setResetError(null)
-                  void onResetAllData().catch(() =>
-                    setResetError('Archive reset did not finish. The lock is still active.')
-                  )
-                }}
-                className='min-h-11 items-center justify-center'
-              >
-                <Text className='text-wa-error'>Reset local archive…</Text>
-              </Pressable>
-            ) : null}
-            {resetError ? <Text className='text-wa-error'>{resetError}</Text> : null}
-          </>
-        )}
-      </View>
-    </ScrollView>
   )
 }
