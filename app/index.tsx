@@ -1,10 +1,16 @@
+import { beginArchiveOperation } from '@/utils/archive-operations'
+import { E2EImportControls } from '@/components/home/e2e-import-controls'
+import { repairChatMedia } from '@/utils/repair-chat-media'
+import { useImportReview } from '@/hooks/use-import-review'
+import { ImportReview } from '@/components/home/import-review'
+import { useAppAppearance } from '@/components/settings/app-appearance-provider'
+import { getAdaptiveLayout } from '@/utils/app-theme'
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Alert, FlatList } from 'react-native'
+import { Alert, FlatList, useWindowDimensions } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { Directory } from 'expo-file-system'
 import * as DocumentPicker from 'expo-document-picker'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
 import {
@@ -15,23 +21,13 @@ import {
   setSavedChatArchived,
   setSavedChatPinned
 } from '@/store/chat-database'
-import {
-  applyMediaAttachmentIndex,
-  deleteMessages,
-  getUnindexedMediaUris,
-  getMessageCount,
-  getParticipants,
-  hasMessages
-} from '@/store/message-database'
+import { deleteMessages } from '@/store/message-database'
 import { cleanupExtractedChat } from '@/utils/zip-extractor'
-import { scanForMedia, findChatFile } from '@/utils/file-scanner'
-import { parseChat } from '@/utils/parser'
-import { indexMedia } from '@/utils/media-index'
-import { openFileTranscript } from '@/utils/transcript-stream'
+import { openSavedChatFromDevice } from '@/utils/open-saved-chat-device'
 import { importChat } from '@/utils/chat-import'
 import { ImportCancelledError, type ChatImportPhase } from '@/utils/chat-import-workflow'
 import { ChatListItem } from '@/components/home/chat-list-item'
-import type { MediaMap, SavedChat } from '@/models/types'
+import type { SavedChat } from '@/models/types'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
 import { getChatLibrarySections } from '@/utils/chat-library'
 import { ChatActionsSheet } from '@/components/home/chat-actions-sheet'
@@ -45,6 +41,7 @@ import { stageIncomingArchiveFromDevice } from '@/utils/incoming-archive-device'
 const IMPORT_STATUS_TEXT: Record<ChatImportPhase, string> = {
   extracting: 'Extracting archive',
   discovering: 'Finding messages and media',
+  reviewing: 'Reviewing import',
   'matching-chat': 'Looking for an existing chat',
   'indexing-media': 'Preparing media previews',
   reading: 'Reading transcript',
@@ -64,10 +61,15 @@ interface ArchiveImportRequest {
   uri: string
   name: string
   needsStaging?: boolean
+  repairChat?: SavedChat
 }
 
 export default function HomeScreen() {
   const router = useRouter()
+  const { colors } = useAppAppearance()
+  const dimensions = useWindowDimensions()
+  const layout = getAdaptiveLayout(dimensions.width, dimensions.height, 'library')
+  const { preview, requestReview, respond } = useImportReview()
   const incomingParams = useLocalSearchParams<{
     [INCOMING_ARCHIVE_PARAM]?: string | string[]
     [INCOMING_ARCHIVE_REQUEST_PARAM]?: string | string[]
@@ -79,18 +81,30 @@ export default function HomeScreen() {
   const [isImporting, setIsImporting] = useState(false)
   const [selectedChat, setSelectedChat] = useState<SavedChat | null>(null)
   const [showingArchived, setShowingArchived] = useState(false)
+  const mounted = useRef(true)
+  const openControllerRef = useRef<AbortController | null>(null)
   const importControllerRef = useRef<AbortController | null>(null)
   const handledIncomingArchiveRef = useRef<string | null>(null)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      importControllerRef.current?.abort()
+      openControllerRef.current?.abort()
+    }
+  }, [])
   const library = useMemo(() => getChatLibrarySections(savedChats), [savedChats])
 
   const runImport = useCallback(
-    async ({ uri, name, needsStaging = false }: ArchiveImportRequest) => {
+    async ({ uri, name, needsStaging = false, repairChat }: ArchiveImportRequest) => {
+      if (!mounted.current) return
       if (importControllerRef.current) {
         Alert.alert('Import already running', 'Wait for the current chat import to finish first.')
         return
       }
 
       const controller = new AbortController()
+      const finishOperation = beginArchiveOperation(controller)
       importControllerRef.current = controller
       setIsLoading(true)
       setError(null)
@@ -103,11 +117,23 @@ export default function HomeScreen() {
           archive = await stageIncomingArchiveFromDevice(uri)
         }
 
-        const { chat, outcome } = await importChat({
+        const operation = repairChat
+          ? (request: Parameters<typeof importChat>[0]) => repairChatMedia(repairChat, request)
+          : importChat
+        const { chat, outcome } = await operation({
           temporaryArchiveUri: archive.uri,
           archiveName: archive.name,
           signal: controller.signal,
+          onReview: next => requestReview(next, controller.signal),
           onProgress: ({ phase, completed, total, phaseCompleted, phaseTotal }) => {
+            if (controller.signal.aborted) {
+              setStatusText(
+                phase === 'rolling-back'
+                  ? 'Cleaning up the cancelled import…'
+                  : 'Cancelling import… Waiting for active file work to finish safely.'
+              )
+              return
+            }
             const percentage = Math.round((completed / total) * 100)
             const itemProgress =
               phaseCompleted !== undefined && phaseTotal !== undefined
@@ -155,27 +181,32 @@ export default function HomeScreen() {
         setIsImporting(false)
         importControllerRef.current = null
         setStatusText('')
-        if (!wasCancelled) Alert.alert('Import Error', message)
+        if (!wasCancelled && mounted.current) Alert.alert('Import Error', message)
+      } finally {
+        finishOperation()
       }
     },
-    [refreshSavedChats, router, setChatData, setIsLoading, setError]
+    [refreshSavedChats, router, setChatData, setIsLoading, setError, requestReview]
   )
 
-  const handleImport = useCallback(async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/zip',
-        copyToCacheDirectory: true
-      })
-      const pickedFile = result.canceled ? null : result.assets[0]
-      if (!pickedFile) return
+  const pickArchive = useCallback(
+    async (repairChat?: SavedChat) => {
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: 'application/zip',
+          copyToCacheDirectory: true
+        })
+        const pickedFile = result.canceled ? null : result.assets[0]
+        if (!pickedFile || !mounted.current) return
 
-      await runImport({ uri: pickedFile.uri, name: pickedFile.name ?? 'Chat.zip' })
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An unknown error occurred'
-      Alert.alert('Import Error', message)
-    }
-  }, [runImport])
+        await runImport({ uri: pickedFile.uri, name: pickedFile.name ?? 'Chat.zip', repairChat })
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'An unknown error occurred'
+        Alert.alert('Import Error', message)
+      }
+    },
+    [runImport]
+  )
 
   const incomingArchive = incomingParams[INCOMING_ARCHIVE_PARAM]
   const incomingArchiveUri = Array.isArray(incomingArchive) ? incomingArchive[0] : incomingArchive
@@ -199,71 +230,25 @@ export default function HomeScreen() {
 
   const handleOpenChat = useCallback(
     async (chat: SavedChat) => {
+      if (!mounted.current || openControllerRef.current) return
+      const controller = new AbortController()
+      const finishOperation = beginArchiveOperation(controller)
+      openControllerRef.current = controller
       try {
         setIsLoading(true)
         setError(null)
         setStatusText('Loading chat...')
 
-        // Verify directory still exists
-        const dir = new Directory(chat.extractDirUri)
-        if (!dir.exists) {
-          deleteMessages(chat.id)
-          deleteSavedChat(chat.id)
-          refreshSavedChats()
-          throw new Error('Chat data was deleted from device. Removing from list.')
-        }
-
-        const needsMessageMigration = !hasMessages(chat.id)
-        const unindexedMediaUris = needsMessageMigration
-          ? null
-          : await getUnindexedMediaUris(chat.id)
-        const needsMediaMigration = needsMessageMigration || Boolean(unindexedMediaUris?.size)
-        let mediaMap: MediaMap | null = null
-        if (needsMediaMigration) {
-          setStatusText('Preparing media previews...')
-          const mediaCandidates = scanForMedia(chat.extractDirUri).filter(
-            candidate => !unindexedMediaUris || unindexedMediaUris.has(candidate.uri)
-          )
-          mediaMap = await indexMedia(
-            mediaCandidates,
-            chat.extractDirUri,
-            progress => {
-              setStatusText(`Preparing media previews · ${progress.completed}/${progress.total}`)
-            },
-            undefined,
-            needsMessageMigration
-              ? undefined
-              : attachment => applyMediaAttachmentIndex(chat.id, attachment)
-          )
-        }
-
-        if (needsMessageMigration) {
-          setStatusText('Migrating chat data...')
-          const chatFileUri = findChatFile(chat.extractDirUri)
-
-          if (!chatFileUri) {
-            throw new Error('Chat file no longer found on disk.')
-          }
-
-          try {
-            await parseChat(
-              openFileTranscript(chatFileUri),
-              mediaMap ?? new Map(),
-              chat.id,
-              chat.myName
-            )
-          } catch (error) {
-            deleteMessages(chat.id)
-            throw error
-          }
-        }
-
-        const messageCount = getMessageCount(chat.id)
-        const participants = getParticipants(chat.id)
+        const { messageCount, participants, missingMediaSources } = await openSavedChatFromDevice(
+          chat,
+          setStatusText,
+          controller.signal
+        )
 
         setChatData({
           chatId: chat.id,
           participants,
+          missingMediaSources,
           chatName: chat.chatName,
           myName: chat.myName,
           extractDirUri: chat.extractDirUri,
@@ -281,10 +266,13 @@ export default function HomeScreen() {
         setError(message)
         setIsLoading(false)
         setStatusText('')
-        Alert.alert('Error', message)
+        if (!controller.signal.aborted && mounted.current) Alert.alert('Error', message)
+      } finally {
+        openControllerRef.current = null
+        finishOperation()
       }
     },
-    [router, setChatData, setIsLoading, setError, refreshSavedChats]
+    [router, setChatData, setIsLoading, setError]
   )
 
   const handleDeleteChat = useCallback(
@@ -373,19 +361,28 @@ export default function HomeScreen() {
   if (isLoading) {
     return (
       <SafeAreaView
-        edges={['bottom']}
+        edges={['bottom', 'left', 'right']}
         style={{
           flex: 1,
-          backgroundColor: '#0B141A',
+          backgroundColor: colors.background,
           justifyContent: 'center',
           alignItems: 'center',
           gap: 12
         }}
       >
-        <ActivityIndicator size='large' color='#00A884' />
+        {preview ? (
+          <ImportReview
+            preview={preview}
+            onAccept={() => respond(true)}
+            onCancel={() => respond(false)}
+          />
+        ) : (
+          <ActivityIndicator size='large' color={colors.accent} />
+        )}
         <Text className='text-wa-text-secondary text-sm'>{statusText}</Text>
-        {isImporting && (
+        {isImporting && !preview && (
           <Pressable
+            disabled={Boolean(importControllerRef.current?.signal.aborted)}
             className='mt-2 rounded-full border border-[#FF6B6B]/60 px-5 py-2 active:bg-[#FF6B6B]/10'
             onPress={() => {
               setStatusText('Cancelling import…')
@@ -402,8 +399,12 @@ export default function HomeScreen() {
   // Empty state - no saved chats yet
   if (savedChats.length === 0) {
     return (
-      <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
-        <View className='flex-1 items-center justify-center px-6'>
+      <SafeAreaView
+        edges={['bottom', 'left', 'right']}
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
+        <E2EImportControls onImport={runImport} />
+        <View className='flex-1 items-center justify-center px-6' style={layout.containerStyle}>
           <View className='bg-wa-header mb-6 h-36 w-36 items-center justify-center rounded-full'>
             <Ionicons name='chatbubbles' size={80} color='#00A884' />
           </View>
@@ -424,7 +425,7 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             className='bg-wa-accent flex-row items-center justify-center self-stretch rounded-xl px-6 py-4'
-            onPress={handleImport}
+            onPress={() => void pickArchive()}
             activeOpacity={0.7}
           >
             <Ionicons name='document-attach' size={24} color='#FFFFFF' style={{ marginRight: 8 }} />
@@ -444,8 +445,13 @@ export default function HomeScreen() {
 
   // Chat list
   return (
-    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
+    <SafeAreaView
+      edges={['bottom', 'left', 'right']}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
+      <E2EImportControls onImport={runImport} />
       <FlatList
+        style={layout.containerStyle}
         data={showingArchived ? library.archived : library.active}
         keyExtractor={chatKeyExtractor}
         renderItem={renderChatItem}
@@ -518,7 +524,7 @@ export default function HomeScreen() {
             shadowOpacity: 0.3,
             shadowRadius: 4
           }}
-          onPress={handleImport}
+          onPress={() => void pickArchive()}
         >
           <Ionicons name='add' size={28} color='#FFFFFF' />
         </Pressable>
@@ -531,6 +537,11 @@ export default function HomeScreen() {
         onTogglePinned={() => selectedChat && handleTogglePinned(selectedChat)}
         onToggleArchived={() => selectedChat && handleToggleArchived(selectedChat)}
         onDelete={() => selectedChat && handleDeleteChat(selectedChat)}
+        onRepair={() => {
+          const chat = selectedChat
+          setSelectedChat(null)
+          if (chat) void pickArchive(chat)
+        }}
       />
     </SafeAreaView>
   )

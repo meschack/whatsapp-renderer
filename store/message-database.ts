@@ -1,3 +1,4 @@
+import { withArchiveWrite } from '@/utils/archive-operations'
 import type { MediaAttachment, MediaMap, Message } from '@/models/types'
 import type { TimelineRecord } from '@/utils/chat-timeline'
 import {
@@ -114,6 +115,14 @@ export interface MessageSearchPage {
   results: MessageSearchResult[]
   hasMore: boolean
   nextCursor: number | null
+}
+
+export async function getNewestMessageSequence(chatId: string): Promise<number | null> {
+  const row = await getArchiveDatabase().getFirstAsync<{ id: number }>(
+    'SELECT id FROM messages WHERE chatId = ? ORDER BY id DESC LIMIT 1',
+    chatId
+  )
+  return row?.id ?? null
 }
 
 export async function getChatDays(chatId: string): Promise<ChatDay[]> {
@@ -475,15 +484,17 @@ export async function saveChatPosition(chatId: string, messageSequence: number):
   if (!chatId || !Number.isSafeInteger(messageSequence) || messageSequence <= 0) return
 
   const db = getArchiveDatabase()
-  await db.runAsync(
-    `INSERT INTO chat_positions (chatId, messageSequence, updatedAt)
+  await withArchiveWrite(() =>
+    db.runAsync(
+      `INSERT INTO chat_positions (chatId, messageSequence, updatedAt)
      VALUES (?, ?, ?)
      ON CONFLICT(chatId) DO UPDATE SET
        messageSequence = excluded.messageSequence,
        updatedAt = excluded.updatedAt`,
-    chatId,
-    messageSequence,
-    Date.now()
+      chatId,
+      messageSequence,
+      Date.now()
+    )
   )
 }
 

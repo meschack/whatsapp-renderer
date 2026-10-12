@@ -1,0 +1,146 @@
+name: Native smoke (opt-in)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Native platforms to test
+        type: choice
+        options: [both, android, ios]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: '1'
+  E2E_BUILD: '1'
+  EXPO_PUBLIC_E2E: '1'
+  MAESTRO_VERSION: '2.11.0'
+  MAESTRO_CLI_NO_ANALYTICS: '1'
+
+jobs:
+  android:
+    if: inputs.platform == 'both' || inputs.platform == 'android'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci --include=dev
+      - name: Install pinned Maestro CLI
+        run: |
+          curl -fsSL https://get.maestro.mobile.dev -o "$RUNNER_TEMP/install-maestro.sh"
+          bash "$RUNNER_TEMP/install-maestro.sh"
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Generate isolated E2E native app
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Build standalone release APK with bundled JavaScript
+        working-directory: android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=x86_64 --no-daemon
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run production-path smoke on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          # Keep status/log capture in one shell; the runner executes script lines separately.
+          script: >-
+            bash -c 'set -e;
+            mkdir -p artifacts/android;
+            adb install -r android/app/build/outputs/apk/release/app-release.apk;
+            adb logcat -c;
+            status=0;
+            maestro test --format junit --output artifacts/android/results.xml --debug-output artifacts/android/maestro --test-output-dir artifacts/android/maestro e2e/native-smoke.yaml || status=$?;
+            adb logcat -d > artifacts/android/logcat.txt;
+            exit "$status"'
+      - name: Upload Android evidence and E2E APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-android
+          path: |
+            artifacts/android/
+            android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 7
+          if-no-files-found: warn
+
+  ios:
+    if: inputs.platform == 'both' || inputs.platform == 'ios'
+    runs-on: macos-26
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Select Xcode
+        run: sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
+      - run: npm ci --include=dev
+      - name: Install pinned Maestro CLI
+        run: |
+          curl -fsSL https://get.maestro.mobile.dev -o "$RUNNER_TEMP/install-maestro.sh"
+          bash "$RUNNER_TEMP/install-maestro.sh"
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Generate isolated E2E native app
+        run: npx expo prebuild --platform ios --clean --no-install
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+      - name: Build standalone simulator app with bundled JavaScript
+        run: |
+          mkdir -p artifacts/ios
+          xcodebuild -workspace ios/Kinsay.xcworkspace -scheme Kinsay \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios-e2e CODE_SIGNING_ALLOWED=NO build \
+            > artifacts/ios/build.log 2>&1
+      - name: Boot a disposable iPhone simulator
+        run: |
+          device_type=$(xcrun simctl list devicetypes --json | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { const type = JSON.parse(data).devicetypes.find(device => device.name === "iPhone 17 Pro"); if (!type) process.exit(1); process.stdout.write(type.identifier) })')
+          runtime=$(xcrun simctl list runtimes --json | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { const runtime = JSON.parse(data).runtimes.filter(item => item.isAvailable && item.name.startsWith("iOS")).at(-1); if (!runtime) process.exit(1); process.stdout.write(runtime.identifier) })')
+          simulator_id=$(xcrun simctl create Kinsay-E2E "$device_type" "$runtime")
+          echo "E2E_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          xcrun simctl install "$simulator_id" build/ios-e2e/Build/Products/Release-iphonesimulator/Kinsay.app
+      - name: Run production-path smoke on iOS
+        run: maestro --device "$E2E_SIMULATOR_ID" test --format junit --output artifacts/ios/results.xml --debug-output artifacts/ios/maestro --test-output-dir artifacts/ios/maestro e2e/native-smoke.yaml
+      - name: Collect simulator diagnostics
+        if: always() && env.E2E_SIMULATOR_ID != ''
+        run: |
+          xcrun simctl spawn "$E2E_SIMULATOR_ID" log show --last 15m --style compact --predicate 'process == "Kinsay"' > artifacts/ios/simulator.log 2>&1 || true
+          xcrun simctl shutdown "$E2E_SIMULATOR_ID" || true
+          xcrun simctl delete "$E2E_SIMULATOR_ID" || true
+      - name: Upload iOS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-ios
+          path: artifacts/ios/
+          retention-days: 7
+          if-no-files-found: warn

@@ -59,7 +59,8 @@ export function createIncrementalChatParser(dependencies: IncrementalChatParserD
         batch.push(message)
         persistedMessageCount++
         if (batch.length === dependencies.batchSize) await flush()
-      }
+      },
+      request.signal
     )
 
     throwIfAborted(request.signal)

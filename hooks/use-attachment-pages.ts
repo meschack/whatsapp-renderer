@@ -61,6 +61,21 @@ export function useAttachmentPages(
   const repository = options.repository ?? defaultRepository
   const requestKey = `${chatId}\u0000${filter}\u0000${initialSequence ?? ''}`
   const [activeKey, setActiveKey] = useState(requestKey)
+  const [loadError, setLoadError] = useState<{
+    direction: 'initial' | 'older' | 'newer'
+    message: string
+  } | null>(null)
+  const errorRef = useRef<typeof loadError>(null)
+  const [retryToken, setRetryToken] = useState(0)
+  const clearError = useCallback(() => {
+    errorRef.current = null
+    setLoadError(null)
+  }, [])
+  const reportError = useCallback((direction: 'initial' | 'older' | 'newer') => {
+    const next = { direction, message: "Couldn't load attachments. Please try again." }
+    errorRef.current = next
+    setLoadError(next)
+  }, [])
   const [records, setRecords] = useState<AttachmentRecord[]>([])
   const [hasOlder, setHasOlder] = useState(false)
   const [hasNewer, setHasNewer] = useState(false)
@@ -89,6 +104,7 @@ export function useAttachmentPages(
 
   useEffect(() => {
     const generation = ++generationRef.current
+    clearError()
     setActiveKey(requestKey)
     recordsRef.current = []
     hasOlderRef.current = false
@@ -119,6 +135,7 @@ export function useAttachmentPages(
       error => {
         if (generationRef.current !== generation) return
         console.error('Failed to load attachments', error)
+        reportError('initial')
         setIsInitialLoading(false)
       }
     )
@@ -132,6 +149,9 @@ export function useAttachmentPages(
     initialSequence,
     pageSize,
     repository,
+    retryToken,
+    clearError,
+    reportError,
     replaceHasNewer,
     replaceHasOlder,
     replaceRecords,
@@ -139,6 +159,7 @@ export function useAttachmentPages(
   ])
 
   const loadOlder = useCallback(async () => {
+    if (errorRef.current?.direction === 'older') return
     if (!hasOlderRef.current || inFlightRef.current.older) return
     const cursor = recordsRef.current.at(-1)?.sequence
     if (cursor === undefined) return
@@ -158,6 +179,7 @@ export function useAttachmentPages(
       return merged.records
     } catch (error) {
       console.error('Failed to load older attachments', error)
+      if (generationRef.current === generation) reportError('older')
     } finally {
       if (generationRef.current === generation) {
         inFlightRef.current.older = false
@@ -172,10 +194,12 @@ export function useAttachmentPages(
     repository,
     replaceHasNewer,
     replaceHasOlder,
-    replaceRecords
+    replaceRecords,
+    reportError
   ])
 
   const loadNewer = useCallback(async () => {
+    if (errorRef.current?.direction === 'newer') return
     if (!hasNewerRef.current || inFlightRef.current.newer) return
     const cursor = recordsRef.current[0]?.sequence
     if (cursor === undefined) return
@@ -193,6 +217,7 @@ export function useAttachmentPages(
       return merged.records
     } catch (error) {
       console.error('Failed to load newer attachments', error)
+      if (generationRef.current === generation) reportError('newer')
     } finally {
       if (generationRef.current === generation) {
         inFlightRef.current.newer = false
@@ -207,11 +232,22 @@ export function useAttachmentPages(
     repository,
     replaceHasNewer,
     replaceHasOlder,
-    replaceRecords
+    replaceRecords,
+    reportError
   ])
+
+  const retry = useCallback(() => {
+    const direction = errorRef.current?.direction
+    clearError()
+    if (direction === 'older') void loadOlder()
+    else if (direction === 'newer') void loadNewer()
+    else setRetryToken(value => value + 1)
+  }, [clearError, loadOlder, loadNewer])
 
   const isStale = activeKey !== requestKey
   return {
+    loadError: isStale ? null : loadError,
+    retry,
     records: isStale ? [] : records,
     hasOlder: isStale ? false : hasOlder,
     hasNewer: isStale ? false : hasNewer,

@@ -96,7 +96,7 @@ describe('buildTimelineItems', () => {
 
     const gallery = items.find(item => item.type === 'image-group')
     expect(gallery).toMatchObject({
-      id: 'image-group-2-6',
+      id: 'image-group-2',
       firstSequence: 2,
       lastSequence: 6,
       showSender: false
@@ -213,5 +213,16 @@ describe('message actions', () => {
         { label: 'File', value: 'Available' }
       ])
     )
+  })
+})
+
+describe('image album identity while paging', () => {
+  it('retains the same list key when an appended page extends a visible album', () => {
+    const current = [imageRecord(20, '2026-08-21T09:00:00'), imageRecord(21, '2026-08-21T09:00:10')]
+    const before = buildTimelineItems(current).find(item => item.type === 'image-group')!
+    const after = buildTimelineItems([...current, imageRecord(22, '2026-08-21T09:00:20')]).find(
+      item => item.type === 'image-group'
+    )!
+    expect(after.id).toBe(before.id)
   })
 })

@@ -1,11 +1,15 @@
+import type { Ref } from 'react'
+import type { View as NativeView } from 'react-native'
 import { useRouter } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { View, Text, Pressable } from '@/src/tw'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
 import { useChatAppearance } from './chat-appearance-context'
 
 interface ChatHeaderProps {
+  searchButtonRef?: Ref<NativeView>
+  moreButtonRef?: Ref<NativeView>
   chatName: string
   participantCount: number
   onSearchPress?: () => void
@@ -14,6 +18,8 @@ interface ChatHeaderProps {
 }
 
 export function ChatHeader({
+  searchButtonRef,
+  moreButtonRef,
   chatName,
   participantCount,
   onSearchPress,
@@ -56,6 +62,7 @@ export function ChatHeader({
         <View className='h-10 flex-row items-center rounded-full border border-white/5 bg-black/10 px-1'>
           {onSearchPress && (
             <Pressable
+              ref={searchButtonRef}
               accessibilityLabel='Search messages'
               accessibilityRole='button'
               className='size-11 items-center justify-center'
@@ -66,6 +73,7 @@ export function ChatHeader({
           )}
           {onMorePress && (
             <Pressable
+              ref={moreButtonRef}
               accessibilityLabel='Open chat tools'
               accessibilityRole='button'
               className='size-11 items-center justify-center'

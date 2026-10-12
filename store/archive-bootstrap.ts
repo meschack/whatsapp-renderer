@@ -49,7 +49,7 @@ interface Migration {
   migrate(database: ArchiveDatabase): Promise<void>
 }
 
-export const LATEST_ARCHIVE_SCHEMA_VERSION = 16
+export const LATEST_ARCHIVE_SCHEMA_VERSION = 17
 
 const migrations: Migration[] = [
   {
@@ -322,6 +322,14 @@ const migrations: Migration[] = [
           'ALTER TABLE chat_appearance ADD COLUMN wallpaperDimming REAL NOT NULL DEFAULT 0'
         )
       }
+    }
+  },
+  {
+    version: 17,
+    async migrate(database) {
+      await database.exec(
+        'ALTER TABLE chat_appearance ADD COLUMN textScaleOverride REAL; UPDATE chat_appearance SET textScaleOverride = textScale;'
+      )
     }
   }
 ]

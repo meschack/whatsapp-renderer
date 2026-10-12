@@ -3,7 +3,7 @@
     "name": "Kinsay",
     "slug": "whatsapp-renderer",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon-v2.png",
     "scheme": "whatsapprenderer",
     "userInterfaceStyle": "automatic",
@@ -95,7 +95,14 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID to unlock Kinsay when you enable biometric unlock."
+        }
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

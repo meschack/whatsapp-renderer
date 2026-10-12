@@ -1,0 +1,142 @@
+appId: com.godwingbewezoun.whatsapprenderer.e2e
+name: Archive import, navigation, paging, persistence and appearance
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: e2e-import-initial
+    timeout: 30000
+- tapOn:
+    id: e2e-import-initial
+- extendedWaitUntil:
+    visible:
+      id: import-review-confirm
+    timeout: 30000
+- assertVisible: '.*1[,.]?560.*'
+- tapOn:
+    id: import-review-confirm
+- extendedWaitUntil:
+    visible: Import completed with notices
+    timeout: 60000
+- tapOn: OK
+- assertVisible: Select Me as me
+- tapOn: Select Me as me
+- assertVisible: '.*E2E message 1560.*'
+- tapOn: Back to chats
+- tapOn:
+    id: chat-row-e2e
+- assertVisible: '.*E2E message 1560.*'
+- takeScreenshot: initial-chat
+
+# Walk 960 records backwards: exceeds six pages even at the largest 100-record page size.
+- scrollUntilVisible:
+    element:
+      text: '.*E2E message 0600.*'
+    direction: UP
+    timeout: 180000
+    speed: 40
+- assertVisible: '.*E2E message 0600.*'
+- takeScreenshot: past-six-pages
+- tapOn: Jump to latest message
+- assertVisible: '.*E2E message 1560.*'
+
+# Search creates a distant jump; bookmark it, then verify that leaving/restarting preserves position.
+- tapOn: Search messages
+- tapOn:
+    id: chat-search-input
+- inputText: E2E message 0720
+- hideKeyboard
+- assertVisible: '.*E2E message 0720.*'
+- tapOn: '.*E2E message 0720.*'
+- assertVisible: '.*E2E message 0720.*'
+- longPressOn: '.*E2E message 0720.*'
+- tapOn: Bookmark
+- assertVisible: Remove bookmark
+- tapOn:
+    id: message-actions-dismiss
+- tapOn: Open bookmarked messages
+- assertVisible: '.*E2E message 0720.*'
+- tapOn: '.*E2E message 0720.*'
+- assertVisible: '.*E2E message 0720.*'
+- tapOn: Back to chats
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn:
+    id: chat-row-e2e
+- assertVisible: '.*E2E message 0720.*'
+- takeScreenshot: restored-read-position
+
+# Calendar starts at the latest transcript month (September); move to August.
+- tapOn: Jump to a date
+- tapOn: Previous month
+- assertVisible: '2026-08-13, 60 messages'
+- tapOn: '2026-08-13, 60 messages'
+- assertVisible: '.*E2E message 0001.*'
+- tapOn: Open chat tools
+- tapOn: Chat media
+- assertVisible: '.*fixture-image.png.*'
+- tapOn: Open image fixture-image.png
+- assertVisible: Close media viewer
+- takeScreenshot: image-viewer
+- tapOn: Close media viewer
+- tapOn: Close media library
+- assertVisible: '.*E2E message 0001.*'
+
+# Android hardware Back specifically exercises modal dismissal; iOS uses the visible Back control.
+- tapOn: Search messages
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+      - assertVisible: Open chat tools
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: Close search
+      - assertVisible: Open chat tools
+- tapOn: Back to chats
+
+# Import the later export through the same review/commit path; history must update one chat.
+- tapOn:
+    id: e2e-import-update
+- extendedWaitUntil:
+    visible:
+      id: import-review-confirm
+    timeout: 30000
+- assertVisible: '.*120.*'
+- tapOn:
+    id: import-review-confirm
+- extendedWaitUntil:
+    visible: Import completed with notices
+    timeout: 60000
+- tapOn: OK
+- assertVisible: Open chat tools
+- tapOn: Jump to latest message
+- assertVisible: '.*E2E message 1680.*'
+- takeScreenshot: updated-chat
+- tapOn: Back to chats
+
+# Verify app-wide appearance state survives process restart.
+- tapOn:
+    id: app-settings-button
+- tapOn: Light theme
+- assertVisible:
+    id: app-theme-selected-light
+- takeScreenshot: light-appearance
+- tapOn: Dark theme
+- assertVisible:
+    id: app-theme-selected-dark
+- tapOn:
+    id: app-settings-close
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn:
+    id: app-settings-button
+- assertVisible:
+    id: app-theme-selected-dark
+- takeScreenshot: persisted-dark-appearance

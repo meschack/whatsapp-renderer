@@ -443,3 +443,155 @@ describe('chat import workflow', () => {
     )
   })
 })
+
+describe('import planning and cancellation', () => {
+  const request = { temporaryArchiveUri: 'file:///cache/review.zip', archiveName: 'Alice.zip' }
+  it('awaits review before indexing or writing and describes date/media ambiguity', async () => {
+    let approve!: (accepted: boolean) => void
+    let preview: import('../utils/chat-import-workflow').ChatImportPreview | undefined
+    let indexed = false
+    const harness = createHarness({
+      discoverArchive: () => ({
+        transcriptUri: 'file:///chat/_chat.txt',
+        mediaCandidates: [
+          {
+            filename: 'photo.jpg',
+            relativePath: 'a/photo.jpg',
+            uri: 'file:///chat/a/photo.jpg',
+            type: 'image',
+            size: 1
+          },
+          {
+            filename: 'photo.jpg',
+            relativePath: 'b/photo.jpg',
+            uri: 'file:///chat/b/photo.jpg',
+            type: 'image',
+            size: 2
+          }
+        ]
+      }),
+      openTranscript: () =>
+        async function* () {
+          yield '01/02/26, 10:00 - Alice: photo.jpg (file attached)\n'
+        },
+      indexMedia: async candidates => {
+        indexed = true
+        expect(candidates).toEqual([])
+        return new Map()
+      },
+      parseTranscript: ({ mediaMap }) => {
+        expect(mediaMap.has('photo.jpg')).toBe(false)
+        return { messageCount: 1, participants: ['Alice'] }
+      }
+    })
+    const pending = harness.importChat({
+      ...request,
+      onReview: plan => {
+        preview = plan
+        return new Promise(resolve => {
+          approve = resolve
+        })
+      }
+    })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(indexed).toBe(false)
+    expect(harness.savedChats.size).toBe(0)
+    expect(preview).toMatchObject({
+      outcome: 'imported',
+      messageCount: 1,
+      newMessageCount: 1,
+      mediaCount: 0,
+      ambiguousDateCount: 1,
+      ambiguousMedia: [{ filename: 'photo.jpg', relativePaths: ['a/photo.jpg', 'b/photo.jpg'] }]
+    })
+    approve(true)
+    await expect(pending).resolves.toMatchObject({ outcome: 'imported' })
+    expect(indexed).toBe(true)
+  })
+
+  it('declining review cleans extracted/archive files without indexing', async () => {
+    const harness = createHarness({
+      openTranscript: () =>
+        async function* () {
+          yield '23/08/26, 10:00 - Alice: Hello\n'
+        },
+      indexMedia: async () => {
+        throw new Error('must not index')
+      }
+    })
+    await expect(harness.importChat({ ...request, onReview: () => false })).rejects.toBeInstanceOf(
+      ImportCancelledError
+    )
+    expect(harness.cleanedDirectories).toHaveLength(1)
+    expect(harness.cleanedArchives).toHaveLength(1)
+  })
+
+  it('aborting a pending review immediately rolls back', async () => {
+    const controller = new AbortController()
+    const harness = createHarness({
+      openTranscript: () =>
+        async function* () {
+          yield '23/08/26, 10:00 - Alice: Hello\n'
+        }
+    })
+    await expect(
+      harness.importChat({
+        ...request,
+        signal: controller.signal,
+        onReview: () => {
+          setTimeout(() => controller.abort(), 0)
+          return new Promise(() => {})
+        }
+      })
+    ).rejects.toBeInstanceOf(ImportCancelledError)
+    expect(harness.cleanedArchives).toHaveLength(1)
+    expect(harness.cleanedDirectories).toHaveLength(1)
+  })
+
+  it.each(['extractArchive', 'discoverArchive', 'fingerprintArchive', 'findUpdate'] as const)(
+    'passes cancellation into %s and prevents subsequent work',
+    async phase => {
+      const controller = new AbortController()
+      let receivedSignal: AbortSignal | undefined
+      const overrides = {
+        [phase]: (...args: unknown[]) => {
+          receivedSignal =
+            phase === 'findUpdate'
+              ? (args[0] as { signal: AbortSignal }).signal
+              : (args[phase === 'fingerprintArchive' ? 2 : 1] as AbortSignal)
+          controller.abort()
+          if (phase === 'extractArchive')
+            return Promise.resolve('file:///documents/whatsapp-chats/chat-42')
+          if (phase === 'discoverArchive')
+            return { transcriptUri: 'file:///chat/_chat.txt', mediaCandidates: [] }
+          if (phase === 'fingerprintArchive') return 'fingerprint'
+          return null
+        },
+        indexMedia: async () => {
+          throw new Error('must not index')
+        }
+      }
+      const harness = createHarness(overrides)
+      await expect(
+        harness.importChat({ ...request, signal: controller.signal })
+      ).rejects.toBeInstanceOf(ImportCancelledError)
+      expect(receivedSignal).toBe(controller.signal)
+      expect(harness.cleanedArchives).toHaveLength(1)
+    }
+  )
+
+  it('cancellation during the final metadata read prevents committing', async () => {
+    const controller = new AbortController()
+    const harness = createHarness({
+      getLastMessage: () => {
+        controller.abort()
+        return null
+      }
+    })
+    await expect(
+      harness.importChat({ ...request, signal: controller.signal })
+    ).rejects.toBeInstanceOf(ImportCancelledError)
+    expect(harness.savedChats.size).toBe(0)
+    expect(harness.messageChats.size).toBe(0)
+  })
+})

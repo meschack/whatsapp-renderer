@@ -9,7 +9,7 @@ import {
   getVisualAudioProgress,
   shouldShowPlaybackRate
 } from '@/utils/audio-presentation'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { useRecyclingState } from '@shopify/flash-list'
 import { memo, useCallback, useEffect, useMemo } from 'react'
 import {

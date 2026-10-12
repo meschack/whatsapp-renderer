@@ -5,7 +5,7 @@ import {
   loadLinkPreview,
   type LinkPreviewData
 } from '@/utils/link-preview-service'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { useRecyclingState } from '@shopify/flash-list'
 import { Image } from 'expo-image'
 import { memo, useCallback, useEffect, useRef } from 'react'

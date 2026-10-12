@@ -6,7 +6,10 @@ export function createArchiveFingerprint(
   mediaCandidates: MediaCandidate[]
 ): string {
   const mediaIdentity = mediaCandidates
-    .map(candidate => `${candidate.filename}\u0000${candidate.type}\u0000${candidate.size}`)
+    .map(
+      candidate =>
+        `${candidate.relativePath ?? candidate.filename}\u0000${candidate.type}\u0000${candidate.size}`
+    )
     .sort()
     .join('\u0001')
   return `v1:${transcriptDigest}:${fnv1a64(mediaIdentity)}`

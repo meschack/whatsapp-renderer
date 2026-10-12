@@ -1,10 +1,18 @@
+import { Alert } from 'react-native'
+import {
+  AppAppearanceProvider,
+  useAppAppearance
+} from '@/components/settings/app-appearance-provider'
+import { AppLockProvider } from '@/components/settings/app-lock-provider'
+import { AppSettingsButton } from '@/components/settings/app-settings'
+import { resetLocalArchive } from '@/utils/reset-local-archive'
 import type { SavedChat } from '@/models/types'
 import '@/src/global.css'
 import { getAllSavedChats } from '@/store/chat-database'
 import { bootstrapArchive } from '@/store/archive-database'
-import { ChatContext, ChatData } from '@/store/chat-store'
+import { ChatContext, ChatData, useChatStore } from '@/store/chat-store'
 import { ActivityIndicator, Pressable, Text, View } from '@/src/tw'
-import { Stack } from 'expo-router'
+import { Stack, usePathname, useRouter } from 'expo-router'
 import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
@@ -95,48 +103,98 @@ export default function RootLayout() {
     )
   }
 
+  const resetLockedArchive = () =>
+    new Promise<void>((resolve, reject) => {
+      let decided = false
+      Alert.alert(
+        'Reset Kinsay and its passcode?',
+        'This permanently deletes all saved chats, media, bookmarks and preferences. You will need your original WhatsApp exports to import them again.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => {
+              decided = true
+              reject(new Error('Reset cancelled'))
+            }
+          },
+          {
+            text: 'Delete local archive',
+            style: 'destructive',
+            onPress: () => {
+              decided = true
+              void resetLocalArchive().then(() => {
+                setChatData(null)
+                setSavedChats([])
+                setError(null)
+                setIsLoading(false)
+                resolve()
+              }, reject)
+            }
+          }
+        ],
+        {
+          cancelable: true,
+          onDismiss: () => {
+            if (!decided) reject(new Error('Reset cancelled'))
+          }
+        }
+      )
+    })
   return (
-    <ChatContext.Provider
-      value={{
-        chatData,
-        setChatData,
-        isLoading,
-        setIsLoading,
-        error,
-        setError,
-        savedChats,
-        refreshSavedChats
-      }}
-    >
-      <AudioPlayerProvider>
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: '#202C33' },
-            headerTintColor: '#E9EDEF',
-            contentStyle: { backgroundColor: '#0B141A' },
-            animation: 'slide_from_right',
-            headerTitleStyle: { fontFamily: 'Satoshi-Bold' }
+    <AppAppearanceProvider>
+      <AppLockProvider onResetAllData={resetLockedArchive}>
+        <ChatContext.Provider
+          value={{
+            chatData,
+            setChatData,
+            isLoading,
+            setIsLoading,
+            error,
+            setError,
+            savedChats,
+            refreshSavedChats
           }}
         >
-          <Stack.Screen
-            name='index'
-            options={{
-              title: 'Chats',
-              headerTitleStyle: { color: '#E9EDEF', fontFamily: 'Satoshi-Bold' }
-            }}
-          />
-          <Stack.Screen name='chat' options={{ headerShown: false }} />
-          <Stack.Screen
-            name='select-sender'
-            options={{
-              title: 'Who are you?',
-              presentation: 'modal',
-              headerTitleStyle: { color: '#E9EDEF', fontFamily: 'Satoshi-Bold' }
-            }}
-          />
-        </Stack>
-        <StatusBar style='light' />
-      </AudioPlayerProvider>
-    </ChatContext.Provider>
+          <AudioPlayerProvider>
+            <ArchiveNavigator />
+          </AudioPlayerProvider>
+        </ChatContext.Provider>
+      </AppLockProvider>
+    </AppAppearanceProvider>
+  )
+}
+
+function ArchiveNavigator() {
+  const { colors, resolvedTheme } = useAppAppearance()
+  const { chatData } = useChatStore()
+  const pathname = usePathname()
+  const router = useRouter()
+  useEffect(() => {
+    if (!chatData && pathname !== '/') router.replace('/')
+  }, [chatData, pathname, router])
+  return (
+    <>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.headerBackground },
+          headerTintColor: colors.textPrimary,
+          contentStyle: { backgroundColor: colors.background },
+          animation: 'slide_from_right',
+          headerTitleStyle: { fontFamily: 'Satoshi-Bold' }
+        }}
+      >
+        <Stack.Screen
+          name='index'
+          options={{ title: 'Chats', headerRight: () => <AppSettingsButton /> }}
+        />
+        <Stack.Screen name='chat' options={{ headerShown: false }} />
+        <Stack.Screen
+          name='select-sender'
+          options={{ title: 'Who are you?', presentation: 'modal' }}
+        />
+      </Stack>
+      <StatusBar style={resolvedTheme === 'dark' ? 'light' : 'dark'} />
+    </>
   )
 }

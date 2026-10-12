@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { Image } from 'expo-image'
 import { memo } from 'react'
 import { useWindowDimensions } from 'react-native'

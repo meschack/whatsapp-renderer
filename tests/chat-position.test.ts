@@ -10,6 +10,7 @@ vi.mock('../store/archive-database', () => ({
 import {
   applyMediaAttachmentIndex,
   getInitialMessagePage,
+  getNewestMessageSequence,
   findFirstMessageOnLocalDay,
   getChatDays,
   getUnindexedMediaUris,
@@ -105,6 +106,11 @@ function createDatabase(): DatabaseSync {
 }
 
 describe('chat position restoration', () => {
+  it('finds the actual newest message for the reader Latest action', async () => {
+    expect(await getNewestMessageSequence('chat-1')).toBe(12)
+    expect(await getNewestMessageSequence('missing')).toBeNull()
+  })
+
   let sqlite: DatabaseSync
 
   beforeEach(() => {

@@ -1,8 +1,9 @@
+import { useAppAppearance } from '@/components/settings/app-appearance-provider'
 import { useChatStore } from '@/store/chat-store'
 import { saveChatMetadata } from '@/store/chat-database'
 import { updateIsMine, getLastMessage } from '@/store/message-database'
 import { View, Text, Pressable } from '@/src/tw'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
 import { buildParticipantColorMap } from '@/utils/participant-identity'
 import { useMemo } from 'react'
@@ -11,6 +12,7 @@ import { FlatList } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 export default function SelectSenderScreen() {
+  const { colors } = useAppAppearance()
   const router = useRouter()
   const { chatData, setChatData, refreshSavedChats } = useChatStore()
   const participantColors = useMemo(
@@ -21,10 +23,10 @@ export default function SelectSenderScreen() {
   if (!chatData) {
     return (
       <SafeAreaView
-        edges={['bottom']}
+        edges={['bottom', 'left', 'right']}
         style={{
           flex: 1,
-          backgroundColor: '#0B141A',
+          backgroundColor: colors.background,
           justifyContent: 'center',
           alignItems: 'center'
         }}
@@ -75,7 +77,10 @@ export default function SelectSenderScreen() {
   }
 
   return (
-    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
+    <SafeAreaView
+      edges={['bottom', 'left', 'right']}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
       <View className='pt-6'>
         <Text className='text-wa-text-primary mb-2 text-center text-lg font-bold'>
           Select Your Name

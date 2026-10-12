@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import * as Clipboard from 'expo-clipboard'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Modal, Share } from 'react-native'
@@ -74,7 +74,12 @@ export function MessageActionSheet({ chatId, selection, onClose }: MessageAction
 
   return (
     <Modal visible transparent animationType='slide' statusBarTranslucent onRequestClose={onClose}>
-      <Pressable className='flex-1 justify-end bg-black/55' onPress={onClose}>
+      <Pressable
+        testID='message-actions-dismiss'
+        accessibilityLabel='Close message actions'
+        className='flex-1 justify-end bg-black/55'
+        onPress={onClose}
+      >
         <Pressable
           className='rounded-t-[24px] bg-[#202C33] px-4 pt-3'
           style={{ paddingBottom: Math.max(insets.bottom, 16) }}

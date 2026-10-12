@@ -1,6 +1,6 @@
 import type { Message } from '@/models/types'
 import { Text, View } from '@/src/tw'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { cn } from '@/utils/css'
 import { useChatAppearance } from './chat-appearance-context'
 
@@ -33,7 +33,7 @@ export function MessageMeta({
         style={{ fontSize: 11 * textScale }}
         className={cn(
           'text-[11px]',
-          message.isMine ? 'text-white/60' : 'text-wa-text-timestamp',
+          message.isMine ? 'text-wa-text-timestamp-mine' : 'text-wa-text-timestamp',
           textClassName
         )}
       >
@@ -50,7 +50,7 @@ export function InlineMessageMeta({ message }: { message: Message }) {
   return (
     <Text style={{ fontSize: 11 * textScale, lineHeight: 20 * textScale }}>
       {'  '}
-      <Text className={message.isMine ? 'text-white/60' : 'text-wa-text-timestamp'}>
+      <Text className={message.isMine ? 'text-wa-text-timestamp-mine' : 'text-wa-text-timestamp'}>
         {formatMessageTimestamp(message)}
       </Text>
       {message.isMine && (

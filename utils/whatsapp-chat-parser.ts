@@ -1,3 +1,4 @@
+import { throwIfImportAborted, yieldImportWork } from './import-cancellation'
 import type { ImportDiagnostics, MediaMap, Message } from '../models/types'
 import { createImportDiagnostics, recordImportDiagnostic } from './import-diagnostics'
 import { getMediaType } from './media-file'
@@ -146,13 +147,18 @@ function visitRawMessages(
 async function visitRawMessageChunks(
   chunks: AsyncIterable<string>,
   visit: (message: RawMessage) => void | Promise<void>,
-  onMalformedLine?: (line: string) => void
+  onMalformedLine?: (line: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const assembler = new RawMessageAssembler(onMalformedLine)
+  let lineCount = 0
   for await (const line of linesInChunks(chunks)) {
+    throwIfImportAborted(signal)
+    if (++lineCount % 256 === 0) await yieldImportWork(signal)
     const completed = assembler.push(line)
     if (completed) await visit(completed)
   }
+  throwIfImportAborted(signal)
   const finalMessage = assembler.finish()
   if (finalMessage) await visit(finalMessage)
 }
@@ -406,14 +412,16 @@ export async function visitWhatsAppChatStream(
   openTranscript: () => AsyncIterable<string>,
   mediaMap: MediaMap,
   myName: string | undefined,
-  visit: (message: Message) => void | Promise<void>
+  visit: (message: Message) => void | Promise<void>,
+  signal?: AbortSignal
 ): Promise<WhatsAppChatMetadata> {
   const scan = createChatScan()
   const diagnostics = createImportDiagnostics()
   await visitRawMessageChunks(
     openTranscript(),
     message => scanRawMessage(scan, message),
-    line => recordImportDiagnostic(diagnostics, 'malformed-records', line)
+    line => recordImportDiagnostic(diagnostics, 'malformed-records', line),
+    signal
   )
   recordAmbiguousDates(scan, diagnostics)
 
@@ -422,19 +430,24 @@ export async function visitWhatsAppChatStream(
   let messageCount = 0
   let rawIndex = 0
 
-  await visitRawMessageChunks(openTranscript(), async raw => {
-    const message = parseRawMessage(
-      raw,
-      rawIndex++,
-      dateOrder,
-      detectedMyName,
-      mediaMap,
-      diagnostics
-    )
-    if (!message) return
-    await visit(message)
-    messageCount++
-  })
+  await visitRawMessageChunks(
+    openTranscript(),
+    async raw => {
+      const message = parseRawMessage(
+        raw,
+        rawIndex++,
+        dateOrder,
+        detectedMyName,
+        mediaMap,
+        diagnostics
+      )
+      if (!message) return
+      await visit(message)
+      messageCount++
+    },
+    undefined,
+    signal
+  )
 
   return { participants: scan.participants, messageCount, diagnostics }
 }

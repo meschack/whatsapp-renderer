@@ -2,25 +2,48 @@
 @import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css';
 
-@theme {
-  /* WhatsApp Dark Mode Colors */
-  --color-wa-bg: #0b141a;
-  --color-wa-header: #202c33;
-  --color-wa-input: #2a3942;
-  --color-wa-bubble-mine: #075e48;
-  --color-wa-bubble-other: #202c2c;
-  --color-wa-text-primary: #f1f4f5;
-  --color-wa-text-secondary: #aebac1;
-  --color-wa-text-sender: #06cf9c;
-  --color-wa-text-timestamp: #828385;
-  --color-wa-accent: #00a884;
-  --color-wa-accent-light: #06cf9c;
-  --color-wa-icon: #8696a0;
-  --color-wa-divider: #222d34;
-  --color-wa-checkmark: #53bdeb;
-  --color-wa-waveform: #8696a0;
-  --color-wa-waveform-active: #06cf9c;
-  --color-wa-error: #ff6b6b;
+:root {
+  --app-bg: #0b141a;
+  --app-header: #202c33;
+  --app-input: #2a3942;
+  --app-bubble-mine: #075e48;
+  --app-bubble-other: #202c2c;
+  --app-text-primary: #f1f4f5;
+  --app-text-secondary: #aebac1;
+  --app-text-sender: #06cf9c;
+  --app-text-timestamp: #828385;
+  --app-text-timestamp-mine: rgba(255, 255, 255, 0.6);
+  --app-on-accent: #071a16;
+  --app-accent: #00a884;
+  --app-accent-light: #06cf9c;
+  --app-icon: #8696a0;
+  --app-divider: #222d34;
+  --app-checkmark: #53bdeb;
+  --app-waveform: #8696a0;
+  --app-waveform-active: #06cf9c;
+  --app-error: #ff6b6b;
+}
+
+@theme inline {
+  --color-wa-bg: var(--app-bg);
+  --color-wa-header: var(--app-header);
+  --color-wa-input: var(--app-input);
+  --color-wa-bubble-mine: var(--app-bubble-mine);
+  --color-wa-bubble-other: var(--app-bubble-other);
+  --color-wa-text-primary: var(--app-text-primary);
+  --color-wa-text-secondary: var(--app-text-secondary);
+  --color-wa-text-sender: var(--app-text-sender);
+  --color-wa-text-timestamp: var(--app-text-timestamp);
+  --color-wa-text-timestamp-mine: var(--app-text-timestamp-mine);
+  --color-wa-on-accent: var(--app-on-accent);
+  --color-wa-accent: var(--app-accent);
+  --color-wa-accent-light: var(--app-accent-light);
+  --color-wa-icon: var(--app-icon);
+  --color-wa-divider: var(--app-divider);
+  --color-wa-checkmark: var(--app-checkmark);
+  --color-wa-waveform: var(--app-waveform);
+  --color-wa-waveform-active: var(--app-waveform-active);
+  --color-wa-error: var(--app-error);
 }
 
 @media android {
@@ -36,7 +59,12 @@
   :root {
     --font-mono: ui-monospace;
     --font-serif: ui-serif;
-    --font-sans: system-ui;
+    --font-sans: Satoshi;
     --font-rounded: ui-rounded;
   }
 }
+
+/* Semantic equivalents for legacy literal classes normalized by src/tw. */
+@source inline(
+  'bg-wa-accent bg-wa-accent/12 bg-wa-accent/15 bg-wa-bg bg-wa-bubble-mine bg-wa-error/10 bg-wa-header bg-wa-header/95 bg-wa-icon border-wa-accent border-wa-error/60 text-wa-accent text-wa-accent-light text-wa-bg text-wa-divider text-wa-error text-wa-text-primary text-wa-text-secondary'
+);

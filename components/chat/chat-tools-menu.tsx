@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { Pressable, Text, View } from '@/src/tw'
 
 interface ChatToolsMenuProps {
@@ -54,7 +54,11 @@ export function ChatToolsMenu({
   }
 
   return (
-    <View className='absolute inset-0 z-20'>
+    <View
+      accessibilityViewIsModal
+      importantForAccessibility='yes'
+      className='absolute inset-0 z-20'
+    >
       <Pressable
         accessibilityLabel='Close chat tools'
         className='absolute inset-0 bg-black/55'

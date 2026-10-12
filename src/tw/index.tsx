@@ -1,3 +1,4 @@
+import { themeClasses } from '@/utils/legacy-theme'
 import { useCssElement, useNativeVariable as useFunctionalVariable } from 'react-native-css'
 
 import { Link as RouterLink } from 'expo-router'
@@ -14,9 +15,19 @@ import {
 } from 'react-native'
 import Animated from 'react-native-reanimated'
 
+function themeProps<P extends { className?: string; contentContainerClassName?: string }>(
+  props: P
+): P {
+  return {
+    ...props,
+    className: themeClasses(props.className),
+    contentContainerClassName: themeClasses(props.contentContainerClassName)
+  }
+}
+
 export const Link = (props: React.ComponentProps<typeof RouterLink> & { className?: string }) => {
   // @ts-ignore: Complex union type from useCssElement
-  return useCssElement(RouterLink, props, { className: 'style' })
+  return useCssElement(RouterLink, themeProps(props), { className: 'style' })
 }
 
 export const useCSSVariable =
@@ -27,7 +38,7 @@ export type ViewProps = React.ComponentProps<typeof RNView> & {
 }
 
 export const View = (props: ViewProps) => {
-  return useCssElement(RNView, props, { className: 'style' })
+  return useCssElement(RNView, themeProps(props), { className: 'style' })
 }
 View.displayName = 'CSS(View)'
 
@@ -44,7 +55,7 @@ export const Text = ({
 
   return useCssElement(
     RNText,
-    { ...props, className, style: [{ fontFamily }, style] },
+    { ...props, className: themeClasses(className), style: [{ fontFamily }, style] },
     { className: 'style' }
   )
 }
@@ -57,7 +68,7 @@ export const ScrollView = (
   }
 ) => {
   // @ts-ignore: Complex union type from useCssElement
-  return useCssElement(RNScrollView, props, {
+  return useCssElement(RNScrollView, themeProps(props), {
     className: 'style',
     contentContainerClassName: 'contentContainerStyle'
   })
@@ -67,7 +78,7 @@ ScrollView.displayName = 'CSS(ScrollView)'
 export const Pressable = (
   props: React.ComponentProps<typeof RNPressable> & { className?: string }
 ) => {
-  return useCssElement(RNPressable, props, { className: 'style' })
+  return useCssElement(RNPressable, themeProps(props), { className: 'style' })
 }
 Pressable.displayName = 'CSS(Pressable)'
 
@@ -76,14 +87,14 @@ export const TouchableOpacity = (
     className?: string
   }
 ) => {
-  return useCssElement(RNTouchableOpacity, props, { className: 'style' })
+  return useCssElement(RNTouchableOpacity, themeProps(props), { className: 'style' })
 }
 TouchableOpacity.displayName = 'CSS(TouchableOpacity)'
 
 export const TextInput = (
   props: React.ComponentProps<typeof RNTextInput> & { className?: string }
 ) => {
-  return useCssElement(RNTextInput, props, { className: 'style' })
+  return useCssElement(RNTextInput, themeProps(props), { className: 'style' })
 }
 TextInput.displayName = 'CSS(TextInput)'
 
@@ -94,7 +105,7 @@ export const AnimatedScrollView = (
   }
 ) => {
   // @ts-ignore: Complex union type from useCssElement + Animated
-  return useCssElement(Animated.ScrollView, props, {
+  return useCssElement(Animated.ScrollView, themeProps(props), {
     className: 'style',
     contentContainerClassName: 'contentContainerStyle'
   })

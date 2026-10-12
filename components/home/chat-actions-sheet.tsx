@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { useEffect, useState } from 'react'
 import { Modal } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -14,6 +14,7 @@ interface ChatActionsSheetProps {
   onTogglePinned(): void
   onToggleArchived(): void
   onDelete(): void
+  onRepair(): void
 }
 
 export function ChatActionsSheet({
@@ -22,7 +23,8 @@ export function ChatActionsSheet({
   onRename,
   onTogglePinned,
   onToggleArchived,
-  onDelete
+  onDelete,
+  onRepair
 }: ChatActionsSheetProps) {
   const insets = useSafeAreaInsets()
   const [renaming, setRenaming] = useState(false)
@@ -107,6 +109,7 @@ export function ChatActionsSheet({
                 label={chat.isArchived ? 'Restore to chats' : 'Archive'}
                 onPress={onToggleArchived}
               />
+              <ActionRow icon='construct-outline' label='Repair media…' onPress={onRepair} />
               <ActionRow destructive icon='trash-outline' label='Delete chat…' onPress={onDelete} />
             </>
           )}

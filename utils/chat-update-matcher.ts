@@ -1,3 +1,5 @@
+import { unambiguousMediaCandidates } from './media-candidates'
+import { throwIfImportAborted } from './import-cancellation'
 import type { MediaAttachment, Message, SavedChat } from '../models/types'
 import type { MediaCandidate } from './media-indexer'
 import { visitWhatsAppChatStream } from './whatsapp-chat-parser'
@@ -19,6 +21,7 @@ export interface FindChatUpdateRequest {
   openTranscript: () => AsyncIterable<string>
   mediaCandidates: MediaCandidate[]
   candidates: ChatUpdateCandidate[]
+  signal?: AbortSignal
 }
 
 interface CandidateMatchState {
@@ -48,7 +51,7 @@ function sameMessagePosition(left: Message, right: Message): boolean {
 
 function placeholderMediaMap(candidates: MediaCandidate[]): Map<string, MediaAttachment> {
   return new Map(
-    candidates.map(candidate => [
+    unambiguousMediaCandidates(candidates).map(candidate => [
       candidate.filename,
       {
         ...candidate,
@@ -114,6 +117,7 @@ function matchScore(state: CandidateMatchState): number {
 export async function findChatUpdate(
   request: FindChatUpdateRequest
 ): Promise<ChatUpdateMatch | null> {
+  throwIfImportAborted(request.signal)
   if (request.candidates.length === 0) return null
 
   const states: CandidateMatchState[] = request.candidates.map(candidate => ({
@@ -131,7 +135,8 @@ export async function findChatUpdate(
     message => {
       for (const state of states) inspectMessage(state, message, messageIndex)
       messageIndex++
-    }
+    },
+    request.signal
   )
 
   const matched = states.filter(state => state.match).sort((a, b) => matchScore(b) - matchScore(a))

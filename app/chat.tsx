@@ -1,3 +1,7 @@
+import { useChatTools } from '@/hooks/use-chat-tools'
+import { useAppAppearance } from '@/components/settings/app-appearance-provider'
+import { getAdaptiveLayout } from '@/utils/app-theme'
+import { LoadError } from '@/components/shared/load-error'
 import { ChatBubble } from '@/components/chat/chat-bubble'
 import { ChatCalendar } from '@/components/chat/chat-calendar'
 import { ChatAppearance } from '@/components/chat/chat-appearance'
@@ -24,7 +28,11 @@ import { useMessagePages, type ListItem } from '@/hooks/use-message-pages'
 import { useTimelineBudget } from '@/hooks/use-timeline-budget'
 import { Pressable, Text, View } from '@/src/tw'
 import { useChatStore } from '@/store/chat-store'
-import { saveChatPosition, type MessageSearchResult } from '@/store/message-database'
+import {
+  getNewestMessageSequence,
+  saveChatPosition,
+  type MessageSearchResult
+} from '@/store/message-database'
 import { formatDateLabel, type TimelineRecord } from '@/utils/chat-timeline'
 import { getImportDiagnosticTotal } from '@/utils/import-diagnostics'
 import { isHapticFeedbackEnabled, setHapticFeedbackEnabled } from '@/store/preference-database'
@@ -35,8 +43,8 @@ import {
   saveChatAppearance
 } from '@/store/chat-appearance-database'
 import {
-  DEFAULT_CHAT_APPEARANCE,
   getEffectiveChatTextScale,
+  resolveChatTextScale,
   type ChatAppearancePreference
 } from '@/utils/chat-appearance'
 import {
@@ -56,7 +64,7 @@ import {
 import type { AttachmentRecord } from '@/utils/media-library'
 import type { BookmarkRecord } from '@/utils/bookmarks'
 import type { ChatDateTarget } from '@/utils/chat-calendar'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import * as ImagePicker from 'expo-image-picker'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -66,6 +74,8 @@ import {
   Platform,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type View as NativeView,
+  useWindowDimensions,
   type ViewToken
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -77,13 +87,38 @@ export default function ChatScreen() {
   const flashListRef = useRef<FlashListRef<ListItem>>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [visibleDate, setVisibleDate] = useState<string | null>(null)
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
-  const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false)
-  const [isBookmarkBrowserOpen, setIsBookmarkBrowserOpen] = useState(false)
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
-  const [isInsightsOpen, setIsInsightsOpen] = useState(false)
-  const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
-  const [isAppearanceOpen, setIsAppearanceOpen] = useState(false)
+  const {
+    activeTool,
+    returnFocus,
+    isSearchOpen,
+    isMediaLibraryOpen,
+    isBookmarkBrowserOpen,
+    isCalendarOpen,
+    isInsightsOpen,
+    isToolsMenuOpen,
+    isAppearanceOpen,
+    setIsSearchOpen,
+    setIsMediaLibraryOpen,
+    setIsBookmarkBrowserOpen,
+    setIsCalendarOpen,
+    setIsInsightsOpen,
+    setIsToolsMenuOpen,
+    setIsAppearanceOpen
+  } = useChatTools()
+  const { colors, defaultTextScale } = useAppAppearance()
+  const dimensions = useWindowDimensions()
+  const layout = getAdaptiveLayout(dimensions.width, dimensions.height)
+  const searchControlRef = useRef<NativeView | null>(null)
+  const moreControlRef = useRef<NativeView | null>(null)
+  const toolbarRefs = useMemo(
+    () => ({
+      Search: { current: null as NativeView | null },
+      Saved: { current: null as NativeView | null },
+      Date: { current: null as NativeView | null },
+      Latest: { current: null as NativeView | null }
+    }),
+    []
+  )
   const [isChoosingWallpaper, setIsChoosingWallpaper] = useState(false)
   const choosingWallpaperRef = useRef(false)
   const [hapticsEnabled, setHapticsEnabled] = useState(isHapticFeedbackEnabled)
@@ -100,7 +135,7 @@ export default function ChatScreen() {
   const clearHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const benchmarkStarted = useRef(false)
   const handledJumpRequestKey = useRef<number | null>(null)
-  const { budget, profile } = useTimelineBudget()
+  const { budget, profile, isReady: budgetReady } = useTimelineBudget()
   const { onPageLoad, onLoad, benchmarkEnabled, startBenchmark } = useChatPerformance(
     flashListRef,
     { budget, device: profile }
@@ -112,7 +147,10 @@ export default function ChatScreen() {
     () => buildParticipantColorMap(chatData?.participants ?? []),
     [chatData?.participants]
   )
-  const renderedTextScale = getEffectiveChatTextScale(appearance.textScale, Platform.OS)
+  const renderedTextScale = getEffectiveChatTextScale(
+    resolveChatTextScale(appearance, defaultTextScale),
+    Platform.OS
+  )
 
   useEffect(() => {
     const chatId = chatData?.chatId ?? ''
@@ -136,7 +174,7 @@ export default function ChatScreen() {
     if (!chatId) return
     const customWallpaperUri = appearance.customWallpaperUri
     resetChatAppearance(chatId)
-    setAppearance(DEFAULT_CHAT_APPEARANCE)
+    setAppearance(getChatAppearance(chatId))
     deleteCustomChatWallpaper(customWallpaperUri)
   }, [appearance.customWallpaperUri, chatData?.chatId])
 
@@ -194,6 +232,8 @@ export default function ChatScreen() {
 
   const {
     items,
+    loadError,
+    retry,
     loadOlder,
     loadNewer,
     hasOlder,
@@ -202,7 +242,7 @@ export default function ChatScreen() {
     isLoadingOlder,
     isLoadingNewer,
     restoredSequence
-  } = useMessagePages(chatData?.chatId ?? '', {
+  } = useMessagePages(budgetReady ? (chatData?.chatId ?? '') : '', {
     pageSize: budget.pageSize,
     maxMessages: budget.maxMessages,
     initialSequence: jumpRequest?.sequence,
@@ -224,10 +264,23 @@ export default function ChatScreen() {
 
   useEffect(() => () => positionWriter.flush(), [positionWriter])
 
-  const initialScrollIndex = useMemo(() => {
-    if (restoredSequence === null) return undefined
-    return findTimelineMessageIndex(items, restoredSequence) ?? undefined
-  }, [items, restoredSequence])
+  const listSession = `${chatData?.chatId ?? ''}:${jumpRequest?.key ?? 0}`
+  const startupPosition = useRef<{ session: string; captured: boolean; index: number | undefined }>(
+    { session: listSession, captured: false, index: undefined }
+  )
+  if (startupPosition.current.session !== listSession)
+    startupPosition.current = { session: listSession, captured: false, index: undefined }
+  if (!isInitialLoading && items.length > 0 && !startupPosition.current.captured) {
+    startupPosition.current = {
+      session: listSession,
+      captured: true,
+      index:
+        restoredSequence === null
+          ? undefined
+          : (findTimelineMessageIndex(items, restoredSequence) ?? undefined)
+    }
+  }
+  const initialScrollIndex = startupPosition.current.index
 
   const pendingJumpIndex = useMemo(() => {
     if (!jumpRequest) return null
@@ -404,10 +457,6 @@ export default function ChatScreen() {
     [positionWriter]
   )
 
-  const scrollToBottom = useCallback(() => {
-    flashListRef.current?.scrollToEnd({ animated: true })
-  }, [])
-
   const handleStartReached = useCallback(() => {
     if (hasOlder && !isLoadingOlder) void loadOlder()
   }, [hasOlder, isLoadingOlder, loadOlder])
@@ -431,7 +480,16 @@ export default function ChatScreen() {
       setIsInsightsOpen(false)
       setIsToolsMenuOpen(false)
     },
-    [chatData?.chatId, positionWriter]
+    [
+      chatData?.chatId,
+      positionWriter,
+      setIsSearchOpen,
+      setIsMediaLibraryOpen,
+      setIsBookmarkBrowserOpen,
+      setIsCalendarOpen,
+      setIsInsightsOpen,
+      setIsToolsMenuOpen
+    ]
   )
 
   const handleSearchResult = useCallback(
@@ -454,118 +512,226 @@ export default function ChatScreen() {
     [jumpToMessage]
   )
 
+  const activeChat = useRef(chatData?.chatId)
+  activeChat.current = chatData?.chatId
+  useEffect(
+    () => () => {
+      activeChat.current = undefined
+    },
+    []
+  )
+  const latestRequestPending = useRef(false)
+  const scrollToBottom = useCallback(async () => {
+    if (!hasNewer) {
+      flashListRef.current?.scrollToEnd({ animated: true })
+      return
+    }
+    const chatId = chatData?.chatId
+    if (!chatId || latestRequestPending.current) return
+    latestRequestPending.current = true
+    try {
+      const sequence = await getNewestMessageSequence(chatId)
+      if (sequence !== null && activeChat.current === chatId)
+        jumpToMessage(sequence, `msg-${sequence}`)
+    } catch {
+      Alert.alert(
+        'Latest message unavailable',
+        'The newest message could not be loaded. Try again.'
+      )
+    } finally {
+      latestRequestPending.current = false
+    }
+  }, [chatData?.chatId, hasNewer, jumpToMessage])
+
+  const hideConversation =
+    activeTool !== null ||
+    actionSelection !== null ||
+    imageAlbumRecords !== null ||
+    imageViewerSequence !== null
+
   if (!chatData) {
-    return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }} />
+    return (
+      <SafeAreaView
+        edges={['bottom', 'left', 'right']}
+        style={{ flex: 1, backgroundColor: colors.background }}
+      />
+    )
   }
 
   return (
     <ChatAppearanceProvider value={appearance}>
-      <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: '#0B141A' }}>
-        <ChatHeader
-          chatName={chatData.chatName}
-          participantCount={chatData.participants.length}
-          diagnosticsCount={diagnosticsCount}
-          onSearchPress={() => {
-            setIsMediaLibraryOpen(false)
-            setIsBookmarkBrowserOpen(false)
-            setIsCalendarOpen(false)
-            setIsInsightsOpen(false)
-            setIsToolsMenuOpen(false)
-            setIsSearchOpen(true)
-          }}
-          onMorePress={() => setIsToolsMenuOpen(open => !open)}
-        />
+      <SafeAreaView
+        edges={['bottom', 'left', 'right']}
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
+        <View
+          style={layout.containerStyle}
+          importantForAccessibility={hideConversation ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={hideConversation}
+        >
+          <ChatHeader
+            searchButtonRef={searchControlRef}
+            moreButtonRef={moreControlRef}
+            chatName={chatData.chatName}
+            participantCount={chatData.participants.length}
+            diagnosticsCount={diagnosticsCount}
+            onSearchPress={() => {
+              returnFocus.current = searchControlRef.current
+              setIsMediaLibraryOpen(false)
+              setIsBookmarkBrowserOpen(false)
+              setIsCalendarOpen(false)
+              setIsInsightsOpen(false)
+              setIsToolsMenuOpen(false)
+              setIsSearchOpen(true)
+            }}
+            onMorePress={() => {
+              returnFocus.current = moreControlRef.current
+              setIsToolsMenuOpen(open => !open)
+            }}
+          />
+        </View>
 
-        <View className='flex-1'>
-          <View className='flex-1 bg-[#0B141A]'>
-            <ChatWallpaperBackground preference={appearance} />
-            {!isInitialLoading && (
-              <FlashList
-                ref={flashListRef}
-                data={items}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
-                getItemType={getItemType}
-                initialScrollIndex={initialScrollIndex}
-                initialScrollIndexParams={
-                  initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
-                }
-                contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
-                maintainVisibleContentPosition={
-                  initialScrollIndex === undefined
-                    ? MAINTAIN_BOTTOM_POSITION
-                    : MAINTAIN_RESTORED_POSITION
-                }
-                onScroll={handleScroll}
-                scrollEventThrottle={100}
-                onViewableItemsChanged={handleViewableItemsChanged}
-                onStartReached={handleStartReached}
-                onStartReachedThreshold={0.35}
-                onEndReached={handleEndReached}
-                onEndReachedThreshold={0.2}
-                onLoad={handleListLoad}
-                ListHeaderComponent={
-                  isLoadingOlder ? (
-                    <View className='items-center py-4'>
-                      <ActivityIndicator size='small' color='#00A884' />
-                    </View>
-                  ) : null
-                }
-                ListFooterComponent={
-                  isLoadingNewer ? (
-                    <View className='items-center py-4'>
-                      <ActivityIndicator size='small' color='#00A884' />
-                    </View>
-                  ) : null
-                }
-              />
-            )}
-
-            {isInitialLoading && (
-              <View className='absolute inset-0 items-center justify-center'>
-                <ActivityIndicator size='small' color='#00A884' />
-              </View>
-            )}
-
-            {shouldShowVisibleDate(visibleDate) && (
-              <View
-                pointerEvents='none'
-                className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
-                style={{ elevation: 3 }}
-              >
-                <Text
-                  className='font-medium text-[#E9EDEF]'
-                  style={{ fontSize: 11.5 * renderedTextScale }}
+        <View className='flex-1' style={layout.containerStyle}>
+          <View
+            className='flex-1'
+            importantForAccessibility={hideConversation ? 'no-hide-descendants' : 'auto'}
+            accessibilityElementsHidden={hideConversation}
+          >
+            <View className='flex-1 bg-[#0B141A]'>
+              <ChatWallpaperBackground preference={appearance} />
+              {!!chatData.missingMediaSources && (
+                <Pressable
+                  accessibilityRole='button'
+                  className='bg-wa-header min-h-11 justify-center px-4'
+                  onPress={() =>
+                    Alert.alert(
+                      'Some attachments are missing',
+                      'Your messages have been kept. From the chat library, choose Repair media to select an export and restore missing files.'
+                    )
+                  }
                 >
-                  {visibleDate}
-                </Text>
-              </View>
-            )}
+                  <Text className='text-wa-text-secondary text-sm'>
+                    Some attachments are missing. View repair options.
+                  </Text>
+                </Pressable>
+              )}
+              {budgetReady && !isInitialLoading && loadError?.direction !== 'initial' && (
+                <FlashList
+                  ref={flashListRef}
+                  testID='chat-message-list'
+                  data={items}
+                  renderItem={renderItem}
+                  keyExtractor={keyExtractor}
+                  getItemType={getItemType}
+                  initialScrollIndex={initialScrollIndex}
+                  initialScrollIndexParams={
+                    initialScrollIndex === undefined ? undefined : { viewOffset: 16 }
+                  }
+                  contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
+                  maintainVisibleContentPosition={
+                    initialScrollIndex === undefined
+                      ? MAINTAIN_BOTTOM_POSITION
+                      : MAINTAIN_RESTORED_POSITION
+                  }
+                  onScroll={handleScroll}
+                  scrollEventThrottle={100}
+                  onViewableItemsChanged={handleViewableItemsChanged}
+                  onStartReached={handleStartReached}
+                  onStartReachedThreshold={0.35}
+                  onEndReached={handleEndReached}
+                  onEndReachedThreshold={0.2}
+                  onLoad={handleListLoad}
+                  ListHeaderComponent={
+                    loadError?.direction === 'older' ? (
+                      <LoadError message={loadError.message} onRetry={retry} />
+                    ) : isLoadingOlder ? (
+                      <View className='items-center py-4'>
+                        <ActivityIndicator size='small' color='#00A884' />
+                      </View>
+                    ) : null
+                  }
+                  ListFooterComponent={
+                    loadError?.direction === 'newer' ? (
+                      <LoadError message={loadError.message} onRetry={retry} />
+                    ) : isLoadingNewer ? (
+                      <View className='items-center py-4'>
+                        <ActivityIndicator size='small' color='#00A884' />
+                      </View>
+                    ) : null
+                  }
+                />
+              )}
 
-            {showScrollButton && (
-              <Pressable
-                accessibilityLabel='Scroll to newest message'
-                accessibilityRole='button'
-                className='bg-wa-header absolute right-3.5 flex size-11 items-center justify-center rounded-full'
-                style={{
-                  bottom: 12,
-                  elevation: 4,
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 3
-                }}
-                onPress={scrollToBottom}
-              >
-                <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
-              </Pressable>
-            )}
+              {loadError?.direction === 'initial' && (
+                <View className='absolute inset-0 items-center justify-center px-5'>
+                  <LoadError message={loadError.message} onRetry={retry} />
+                </View>
+              )}
+              {(!budgetReady || isInitialLoading) && (
+                <View className='absolute inset-0 items-center justify-center'>
+                  <ActivityIndicator size='small' color='#00A884' />
+                </View>
+              )}
+
+              {shouldShowVisibleDate(visibleDate) && (
+                <View
+                  pointerEvents='none'
+                  className='absolute top-2 self-center rounded-lg bg-[#182229]/95 px-3 py-1'
+                  style={{ elevation: 3 }}
+                >
+                  <Text
+                    className='font-medium text-[#E9EDEF]'
+                    style={{ fontSize: 11.5 * renderedTextScale }}
+                  >
+                    {visibleDate}
+                  </Text>
+                </View>
+              )}
+
+              {showScrollButton && (
+                <Pressable
+                  accessibilityLabel='Scroll to newest message'
+                  accessibilityRole='button'
+                  className='bg-wa-header absolute right-3.5 flex size-11 items-center justify-center rounded-full'
+                  style={{
+                    bottom: 12,
+                    elevation: 4,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 3
+                  }}
+                  onPress={scrollToBottom}
+                >
+                  <Ionicons name='chevron-down' size={22} color='#FFFFFF' />
+                </Pressable>
+              )}
+            </View>
+
+            <ChatComposer
+              buttonRefs={toolbarRefs}
+              onSearch={() => {
+                returnFocus.current = toolbarRefs.Search.current
+                setIsSearchOpen(true)
+              }}
+              onBookmarks={() => {
+                returnFocus.current = toolbarRefs.Saved.current
+                setIsBookmarkBrowserOpen(true)
+              }}
+              onCalendar={() => {
+                returnFocus.current = toolbarRefs.Date.current
+                setIsCalendarOpen(true)
+              }}
+              onLatest={scrollToBottom}
+            />
           </View>
 
-          <ChatComposer />
-
           {isSearchOpen && (
-            <View className='absolute inset-0'>
+            <View
+              accessibilityViewIsModal
+              importantForAccessibility='yes'
+              className='absolute inset-0'
+            >
               <ChatSearch
                 chatId={chatData.chatId}
                 onClose={() => setIsSearchOpen(false)}
@@ -575,7 +741,11 @@ export default function ChatScreen() {
           )}
 
           {isMediaLibraryOpen && (
-            <View className='absolute inset-0'>
+            <View
+              accessibilityViewIsModal
+              importantForAccessibility='yes'
+              className='absolute inset-0'
+            >
               <MediaLibrary
                 chatId={chatData.chatId}
                 onClose={() => setIsMediaLibraryOpen(false)}
@@ -585,7 +755,11 @@ export default function ChatScreen() {
           )}
 
           {isBookmarkBrowserOpen && (
-            <View className='absolute inset-0'>
+            <View
+              accessibilityViewIsModal
+              importantForAccessibility='yes'
+              className='absolute inset-0'
+            >
               <BookmarkBrowser
                 chatId={chatData.chatId}
                 onClose={() => setIsBookmarkBrowserOpen(false)}
@@ -595,7 +769,11 @@ export default function ChatScreen() {
           )}
 
           {isCalendarOpen && (
-            <View className='absolute inset-0'>
+            <View
+              accessibilityViewIsModal
+              importantForAccessibility='yes'
+              className='absolute inset-0'
+            >
               <ChatCalendar
                 chatId={chatData.chatId}
                 onClose={() => setIsCalendarOpen(false)}
@@ -605,7 +783,11 @@ export default function ChatScreen() {
           )}
 
           {isInsightsOpen && (
-            <View className='absolute inset-0'>
+            <View
+              accessibilityViewIsModal
+              importantForAccessibility='yes'
+              className='absolute inset-0'
+            >
               <ChatInsights chatId={chatData.chatId} onClose={() => setIsInsightsOpen(false)} />
             </View>
           )}

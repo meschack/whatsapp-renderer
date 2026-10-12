@@ -1,5 +1,5 @@
 // WhatsApp Dark Mode color palette
-export const COLORS = {
+export const DARK_COLORS = {
   // Backgrounds
   background: '#0B141A',
   chatBackground: '#0B141A',
@@ -21,6 +21,7 @@ export const COLORS = {
 
   // Accents
   accent: '#00A884',
+  onAccent: '#071A16',
   accentLight: '#06CF9C',
   iconColor: '#8696A0',
   divider: '#222D34',
@@ -36,8 +37,36 @@ export const COLORS = {
   // Misc
   white: '#FFFFFF',
   black: '#000000',
-  overlay: 'rgba(0, 0, 0, 0.5)'
+  overlay: 'rgba(0, 0, 0, 0.5)',
+  error: '#FF6B6B'
 }
+
+export type AppColors = { [K in keyof typeof DARK_COLORS]: string }
+export const LIGHT_COLORS: AppColors = {
+  ...DARK_COLORS,
+  background: '#F7F9FA',
+  chatBackground: '#F2EDE5',
+  headerBackground: '#FFFFFF',
+  inputBackground: '#EDF2F4',
+  bubbleMine: '#D9FDD3',
+  bubbleOther: '#FFFFFF',
+  textPrimary: '#17252D',
+  textSecondary: '#536772',
+  textSender: '#087F63',
+  textTimestamp: '#627680',
+  textTimestampMine: '#52715A',
+  textSystem: '#536772',
+  accent: '#00856A',
+  onAccent: '#FFFFFF',
+  accentLight: '#087F63',
+  iconColor: '#536772',
+  divider: '#DCE5E9',
+  audioWaveform: '#627680',
+  audioWaveformActive: '#087F63',
+  audioBackground: 'rgba(0, 0, 0, 0.06)',
+  error: '#B72F3C'
+}
+export const COLORS = DARK_COLORS
 
 export const SPACING = {
   xs: 2,

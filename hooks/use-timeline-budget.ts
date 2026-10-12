@@ -11,23 +11,33 @@ export interface TimelineDeviceProfile extends TimelineMemoryCapacity {
 }
 
 export function useTimelineBudget() {
-  const [maxMemoryBytes, setMaxMemoryBytes] = useState<number | null>(null)
+  const [maxMemoryBytes, setMaxMemoryBytes] = useState<number | null | undefined>(
+    Platform.OS === 'android' ? undefined : null
+  )
 
   useEffect(() => {
     if (Platform.OS !== 'android') return
 
     let active = true
+    let settled = false
+    const finish = (value: number | null) => {
+      if (!active || settled) return
+      settled = true
+      setMaxMemoryBytes(value)
+    }
+    const fallback = setTimeout(() => finish(null), 2000)
     void Device.getMaxMemoryAsync().then(
       value => {
-        if (active) setMaxMemoryBytes(value)
+        finish(value)
       },
       () => {
-        // Total memory still provides a safe cross-platform budget signal.
+        finish(null)
       }
     )
 
     return () => {
       active = false
+      clearTimeout(fallback)
     }
   }, [])
 
@@ -37,12 +47,12 @@ export function useTimelineBudget() {
       osName: Device.osName,
       osVersion: Device.osVersion,
       totalMemoryBytes: Device.totalMemory,
-      maxMemoryBytes
+      maxMemoryBytes: maxMemoryBytes ?? null
     }),
     [maxMemoryBytes]
   )
 
   const budget = useMemo(() => selectTimelineBudget(profile), [profile])
 
-  return { budget, profile }
+  return { budget, profile, isReady: maxMemoryBytes !== undefined }
 }

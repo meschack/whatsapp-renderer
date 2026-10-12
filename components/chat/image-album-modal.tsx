@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { FlashList } from '@shopify/flash-list'
 import { Image } from 'expo-image'
 import { memo, useEffect } from 'react'

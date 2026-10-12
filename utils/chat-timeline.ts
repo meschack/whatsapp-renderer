@@ -39,6 +39,9 @@ export function localDayKey(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+const weekdayFormatter = new Intl.DateTimeFormat('en-GB', { weekday: 'short' })
+const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short' })
+
 export function formatDateLabel(date: Date, now = new Date()): string {
   const today = localDayKey(now)
   const yesterday = new Date(now)
@@ -48,8 +51,8 @@ export function formatDateLabel(date: Date, now = new Date()): string {
   if (localDayKey(date) === localDayKey(yesterday)) return 'Yesterday'
 
   const includesYear = date.getFullYear() !== now.getFullYear()
-  const weekday = date.toLocaleDateString('en-GB', { weekday: 'short' })
-  const month = date.toLocaleDateString('en-GB', { month: 'short' })
+  const weekday = weekdayFormatter.format(date)
+  const month = monthFormatter.format(date)
   const year = includesYear ? ` ${date.getFullYear()}` : ''
   return `${weekday}, ${date.getDate()} ${month}${year}`
 }
@@ -92,7 +95,7 @@ export function buildTimelineItems(records: TimelineRecord[], now = new Date()):
         const last = group[group.length - 1]
         items.push({
           type: 'image-group',
-          id: `image-group-${sequence}-${last.sequence}`,
+          id: `image-group-${sequence}`,
           firstSequence: sequence,
           lastSequence: last.sequence,
           records: group,
@@ -121,12 +124,29 @@ export function mergeTimelineWindow(
   direction: LoadDirection,
   maxRecords: number
 ): TimelineMergeResult {
-  const bySequence = new Map<number, TimelineRecord>()
-
-  for (const record of current) bySequence.set(record.sequence, record)
-  for (const record of incoming) bySequence.set(record.sequence, record)
-
-  const merged = Array.from(bySequence.values()).sort((a, b) => a.sequence - b.sequence)
+  const chronological = (records: TimelineRecord[]) =>
+    records.every((record, index) => index === 0 || records[index - 1].sequence <= record.sequence)
+      ? records
+      : [...records].sort((left, right) => left.sequence - right.sequence)
+  const left = chronological(current)
+  const right = chronological(incoming)
+  const merged: TimelineRecord[] = []
+  let i = 0
+  let j = 0
+  // Database pages are already ordered. Merge linearly and preserve row objects;
+  // incoming copies win at overlap, without allocating a Map or sorting each page.
+  while (i < left.length || j < right.length) {
+    let next: TimelineRecord
+    if (j >= right.length || (i < left.length && left[i].sequence < right[j].sequence))
+      next = left[i++]
+    else if (i >= left.length || right[j].sequence < left[i].sequence) next = right[j++]
+    else {
+      i++
+      next = right[j++]
+    }
+    if (merged.at(-1)?.sequence === next.sequence) merged[merged.length - 1] = next
+    else merged.push(next)
+  }
   const overflow = Math.max(0, merged.length - maxRecords)
 
   if (overflow === 0) {

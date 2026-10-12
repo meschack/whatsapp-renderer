@@ -8,7 +8,7 @@ import {
 } from '@/utils/chat-media-layout'
 import { formatFileSize, getDecodedFilename, getDocumentPresentation } from '@/utils/media-file'
 import { MediaFileActionError, openLocalFile, shareLocalFile } from '@/utils/media-file-actions'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { useRecyclingState } from '@shopify/flash-list'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import { memo, useCallback, useMemo } from 'react'
@@ -99,19 +99,6 @@ const UnavailableMedia = memo(function UnavailableMedia({
     </View>
   )
 })
-
-function isStickerUri(uri: string): boolean {
-  const encodedFilename = uri.split('/').pop()?.split(/[?#]/)[0] ?? ''
-  let filename = encodedFilename
-
-  try {
-    filename = decodeURIComponent(encodedFilename)
-  } catch {
-    // A malformed URI should still render as an ordinary image, not crash the chat.
-  }
-
-  return /^(?:STK-|STICKER)/i.test(filename) && filename.toLowerCase().endsWith('.webp')
-}
 
 const STICKER_SIZE = 128
 

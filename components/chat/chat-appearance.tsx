@@ -1,8 +1,10 @@
-import { Ionicons } from '@expo/vector-icons'
+import { useAppAppearance } from '@/components/settings/app-appearance-provider'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 
 import { ChatWallpaperBackground } from './chat-wallpaper-background'
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from '@/src/tw'
 import {
+  resolveChatTextScale,
   CHAT_TEXT_SCALES,
   CHAT_WALLPAPER_DIMMING,
   CHAT_WALLPAPERS,
@@ -41,8 +43,11 @@ export function ChatAppearance({
   onReset,
   onClose
 }: ChatAppearanceProps) {
+  const { defaultTextScale, colors } = useAppAppearance()
+  const effectiveScale = resolveChatTextScale(preference, defaultTextScale)
   const selectWallpaper = (wallpaper: ChatWallpaperId) => onChange({ ...preference, wallpaper })
-  const selectScale = (textScale: ChatTextScale) => onChange({ ...preference, textScale })
+  const selectScale = (textScale: ChatTextScale) =>
+    onChange({ ...preference, textScale, textScaleOverride: textScale })
   const selectDimming = (wallpaperDimming: ChatWallpaperDimming) =>
     onChange({ ...preference, wallpaperDimming })
 
@@ -77,7 +82,7 @@ export function ChatAppearance({
           <View className='absolute top-14 left-3 max-w-[76%] rounded-xl rounded-tl-sm bg-[#202C33] px-3 py-2'>
             <Text
               className='text-[#E9EDEF]'
-              style={{ fontSize: 14 * preference.textScale, lineHeight: 19 * preference.textScale }}
+              style={{ fontSize: 14 * effectiveScale, lineHeight: 19 * effectiveScale }}
             >
               This is how the chat will look.
             </Text>
@@ -86,7 +91,7 @@ export function ChatAppearance({
           <View className='absolute right-3 bottom-4 max-w-[78%] rounded-xl rounded-tr-sm bg-[#005C4B] px-3 py-2'>
             <Text
               className='text-[#E9EDEF]'
-              style={{ fontSize: 14 * preference.textScale, lineHeight: 19 * preference.textScale }}
+              style={{ fontSize: 14 * effectiveScale, lineHeight: 19 * effectiveScale }}
             >
               Personalize it until it feels right.
             </Text>
@@ -187,7 +192,7 @@ export function ChatAppearance({
                 accessibilityState={{ checked: selected }}
                 className='min-h-10 flex-1 items-center justify-center rounded-lg'
                 onPress={() => selectDimming(dimming)}
-                style={{ backgroundColor: selected ? '#005C4B' : 'transparent' }}
+                style={{ backgroundColor: selected ? colors.bubbleMine : 'transparent' }}
               >
                 <Text className='text-[13px] font-medium text-[#E9EDEF]'>
                   {DIMMING_LABELS[dimming]}
@@ -201,8 +206,24 @@ export function ChatAppearance({
           Message text
         </Text>
         <View className='overflow-hidden rounded-xl bg-[#202C33]'>
+          <Pressable
+            accessibilityRole='radio'
+            accessibilityState={{ checked: preference.textScaleOverride === null }}
+            accessibilityLabel='Use app default text size'
+            className='min-h-14 flex-row items-center border-b border-white/5 px-4'
+            onPress={() =>
+              onChange({ ...preference, textScale: defaultTextScale, textScaleOverride: null })
+            }
+          >
+            <Text className='text-wa-text-primary flex-1'>Use app default</Text>
+            <Ionicons
+              name={preference.textScaleOverride === null ? 'radio-button-on' : 'radio-button-off'}
+              size={22}
+              color='#00A884'
+            />
+          </Pressable>
           {CHAT_TEXT_SCALES.map(textScale => {
-            const selected = preference.textScale === textScale
+            const selected = preference.textScaleOverride !== null && effectiveScale === textScale
             return (
               <Pressable
                 key={textScale}

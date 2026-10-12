@@ -6,23 +6,31 @@ import {
 import { getArchiveDatabase } from './archive-database'
 
 export function getChatAppearance(chatId: string): ChatAppearancePreference {
-  if (!chatId) return DEFAULT_CHAT_APPEARANCE
+  if (!chatId) return { ...DEFAULT_CHAT_APPEARANCE, textScaleOverride: null }
   const row = getArchiveDatabase().getFirstSync<{
     wallpaper: string
     textScale: number
+    textScaleOverride: number | null
     customWallpaperUri: string | null
     wallpaperDimming: number
   }>(
-    `SELECT wallpaper, textScale, customWallpaperUri, wallpaperDimming
+    `SELECT wallpaper, textScale, customWallpaperUri, wallpaperDimming, textScaleOverride
      FROM chat_appearance WHERE chatId = ?`,
     chatId
   )
-  return normalizeChatAppearance(
+  const normalized = normalizeChatAppearance(
     row?.wallpaper,
     row?.textScale,
     row?.customWallpaperUri,
     row?.wallpaperDimming
   )
+  return {
+    ...normalized,
+    textScaleOverride:
+      row?.textScaleOverride == null
+        ? null
+        : normalizeChatAppearance(null, row.textScaleOverride).textScale
+  }
 }
 
 export function saveChatAppearance(chatId: string, preference: ChatAppearancePreference): void {
@@ -35,18 +43,20 @@ export function saveChatAppearance(chatId: string, preference: ChatAppearancePre
   )
   getArchiveDatabase().runSync(
     `INSERT INTO chat_appearance (
-       chatId, wallpaper, textScale, customWallpaperUri, wallpaperDimming
-     ) VALUES (?, ?, ?, ?, ?)
+       chatId, wallpaper, textScale, customWallpaperUri, wallpaperDimming, textScaleOverride
+     ) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(chatId) DO UPDATE SET
        wallpaper = excluded.wallpaper,
        textScale = excluded.textScale,
        customWallpaperUri = excluded.customWallpaperUri,
-       wallpaperDimming = excluded.wallpaperDimming`,
+       wallpaperDimming = excluded.wallpaperDimming,
+       textScaleOverride = excluded.textScaleOverride`,
     chatId,
     normalized.wallpaper,
     normalized.textScale,
     normalized.customWallpaperUri,
-    normalized.wallpaperDimming
+    normalized.wallpaperDimming,
+    preference.textScaleOverride === undefined ? normalized.textScale : preference.textScaleOverride
   )
 }
 

@@ -1,10 +1,12 @@
 import {
   DEFAULT_CHAT_APPEARANCE,
   getEffectiveChatTextScale,
+  resolveChatTextScale,
   type ChatAppearancePreference
 } from '@/utils/chat-appearance'
 import { createContext, useContext, useMemo, type PropsWithChildren } from 'react'
 import { Platform } from 'react-native'
+import { useAppAppearance } from '@/components/settings/app-appearance-provider'
 
 interface RenderedChatAppearance {
   wallpaper: ChatAppearancePreference['wallpaper']
@@ -17,12 +19,16 @@ export function ChatAppearanceProvider({
   value,
   children
 }: PropsWithChildren<{ value: ChatAppearancePreference }>) {
+  const { defaultTextScale } = useAppAppearance()
   const renderedValue = useMemo<RenderedChatAppearance>(
     () => ({
       wallpaper: value.wallpaper,
-      textScale: getEffectiveChatTextScale(value.textScale, Platform.OS)
+      textScale: getEffectiveChatTextScale(
+        resolveChatTextScale(value, defaultTextScale),
+        Platform.OS
+      )
     }),
-    [value.textScale, value.wallpaper]
+    [value, defaultTextScale]
   )
 
   return (

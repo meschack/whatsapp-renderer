@@ -1,7 +1,9 @@
+import { unambiguousMediaCandidates } from './media-candidates'
 import type { MediaAttachment, MediaMap, MediaType } from '../models/types'
 
 export interface MediaCandidate {
   filename: string
+  relativePath?: string
   uri: string
   type: MediaType
   size: number
@@ -52,6 +54,7 @@ export function createMediaIndexer(dependencies: MediaIndexerDependencies) {
     signal?: AbortSignal,
     onIndexed?: (attachment: MediaAttachment) => void | Promise<void>
   ): Promise<MediaMap> {
+    candidates = unambiguousMediaCandidates(candidates)
     const mediaMap: MediaMap = new Map()
 
     for (let index = 0; index < candidates.length; index++) {
@@ -73,6 +76,7 @@ export function createMediaIndexer(dependencies: MediaIndexerDependencies) {
       await dependencies.yieldToMainThread()
     }
 
+    throwIfAborted(signal)
     return mediaMap
   }
 }

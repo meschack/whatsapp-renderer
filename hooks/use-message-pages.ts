@@ -52,6 +52,21 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
   const onPageLoadRef = useRef(options.onPageLoad)
   onPageLoadRef.current = options.onPageLoad
 
+  const [loadError, setLoadError] = useState<{
+    direction: 'initial' | 'older' | 'newer'
+    message: string
+  } | null>(null)
+  const errorRef = useRef<typeof loadError>(null)
+  const [retryToken, setRetryToken] = useState(0)
+  const clearError = useCallback(() => {
+    errorRef.current = null
+    setLoadError(null)
+  }, [])
+  const reportError = useCallback((direction: 'initial' | 'older' | 'newer') => {
+    const next = { direction, message: "Couldn't load messages. Please try again." }
+    errorRef.current = next
+    setLoadError(next)
+  }, [])
   const [records, setRecords] = useState<TimelineRecord[]>([])
   const [hasOlder, setHasOlder] = useState(false)
   const [hasNewer, setHasNewer] = useState(false)
@@ -83,6 +98,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
 
   useEffect(() => {
     const generation = ++generationRef.current
+    clearError()
     recordsRef.current = []
     hasOlderRef.current = false
     hasNewerRef.current = false
@@ -119,6 +135,7 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
         if (generationRef.current !== generation) return
         setIsInitialLoading(false)
         console.error('Failed to load the initial message page', error)
+        reportError('initial')
       }
     )
 
@@ -131,12 +148,16 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
     initialSequence,
     pageSize,
     repository,
+    retryToken,
+    clearError,
+    reportError,
     replaceHasNewer,
     replaceHasOlder,
     replaceRecords
   ])
 
   const loadOlder = useCallback(async () => {
+    if (errorRef.current?.direction === 'older') return
     if (!chatId || !hasOlderRef.current || inFlightRef.current.older) return
     const first = recordsRef.current[0]
     if (!first) return
@@ -166,15 +187,26 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
       })
     } catch (error) {
       console.error('Failed to load older messages', error)
+      if (generationRef.current === generation) reportError('older')
     } finally {
       if (generationRef.current === generation) {
         inFlightRef.current.older = false
         setIsLoadingOlder(false)
       }
     }
-  }, [chatId, maxMessages, pageSize, repository, replaceHasNewer, replaceHasOlder, replaceRecords])
+  }, [
+    chatId,
+    maxMessages,
+    pageSize,
+    repository,
+    replaceHasNewer,
+    replaceHasOlder,
+    replaceRecords,
+    reportError
+  ])
 
   const loadNewer = useCallback(async () => {
+    if (errorRef.current?.direction === 'newer') return
     if (!chatId || !hasNewerRef.current || inFlightRef.current.newer) return
     const last = recordsRef.current[recordsRef.current.length - 1]
     if (!last) return
@@ -204,17 +236,37 @@ export function useMessagePages(chatId: string, options: MessagePagesOptions = {
       })
     } catch (error) {
       console.error('Failed to load newer messages', error)
+      if (generationRef.current === generation) reportError('newer')
     } finally {
       if (generationRef.current === generation) {
         inFlightRef.current.newer = false
         setIsLoadingNewer(false)
       }
     }
-  }, [chatId, maxMessages, pageSize, repository, replaceHasNewer, replaceHasOlder, replaceRecords])
+  }, [
+    chatId,
+    maxMessages,
+    pageSize,
+    repository,
+    replaceHasNewer,
+    replaceHasOlder,
+    replaceRecords,
+    reportError
+  ])
+
+  const retry = useCallback(() => {
+    const direction = errorRef.current?.direction
+    clearError()
+    if (direction === 'older') void loadOlder()
+    else if (direction === 'newer') void loadNewer()
+    else setRetryToken(value => value + 1)
+  }, [clearError, loadOlder, loadNewer])
 
   const items = useMemo(() => buildTimelineItems(records), [records])
 
   return {
+    loadError,
+    retry,
     items,
     loadOlder,
     loadNewer,

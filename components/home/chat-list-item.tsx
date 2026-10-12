@@ -1,7 +1,7 @@
 import { View, Text, Pressable } from '@/src/tw'
 import type { SavedChat } from '@/models/types'
 import { GeneratedAvatar } from '@/components/shared/generated-avatar'
-import { Ionicons } from '@expo/vector-icons'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { performHapticFeedback } from '@/utils/haptic-feedback'
 
 interface ChatListItemProps {
@@ -35,6 +35,7 @@ const formatRelativeTime = (isoString: string): string => {
 export const ChatListItem = ({ chat, onPress, onLongPress }: ChatListItemProps) => {
   return (
     <Pressable
+      testID={chat.chatName === 'E2E Archive' ? 'chat-row-e2e' : undefined}
       accessibilityLabel={`${chat.chatName}, ${chat.lastMessageText ?? 'Media message'}`}
       accessibilityHint='Double tap to open. Long press for chat actions.'
       accessibilityRole='button'

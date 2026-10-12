@@ -7,6 +7,7 @@ export interface ChatData {
   chatName: string
   myName: string
   extractDirUri: string
+  missingMediaSources?: number
   messageCount: number
   importedAt: string
   archiveFingerprint?: string | null

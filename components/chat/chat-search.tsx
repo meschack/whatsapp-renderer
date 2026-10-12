@@ -1,4 +1,7 @@
-import { Ionicons } from '@expo/vector-icons'
+import { useToolFocus } from '@/hooks/use-tool-focus'
+import { LoadError } from '@/components/shared/load-error'
+import { useAppAppearance } from '@/components/settings/app-appearance-provider'
+import { ThemedIonicons as Ionicons } from '@/components/shared/themed-icon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, FlatList } from 'react-native'
 
@@ -16,12 +19,16 @@ interface ChatSearchProps {
 }
 
 export function ChatSearch({ chatId, onClose, onSelect }: ChatSearchProps) {
+  const { colors } = useAppAppearance()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MessageSearchResult[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retryToken, setRetryToken] = useState(0)
+  const failureRef = useRef<'initial' | 'more' | null>(null)
+  const closeRef = useToolFocus(error)
   const generationRef = useRef(0)
   const loadingMoreRef = useRef(false)
 
@@ -31,6 +38,9 @@ export function ChatSearch({ chatId, onClose, onSelect }: ChatSearchProps) {
     setResults([])
     setHasMore(false)
     setError(null)
+    failureRef.current = null
+    loadingMoreRef.current = false
+    setIsLoadingMore(false)
 
     if (!trimmedQuery) {
       setIsLoading(false)
@@ -48,43 +58,66 @@ export function ChatSearch({ chatId, onClose, onSelect }: ChatSearchProps) {
         },
         searchError => {
           if (generationRef.current !== generation) return
+          failureRef.current = 'initial'
           setError(searchError instanceof Error ? searchError.message : 'Search failed')
           setIsLoading(false)
         }
       )
     }, SEARCH_DEBOUNCE_MS)
 
-    return () => clearTimeout(timer)
-  }, [chatId, query])
+    return () => {
+      clearTimeout(timer)
+      if (generationRef.current === generation) generationRef.current = generation + 1
+    }
+  }, [chatId, query, retryToken])
 
-  const loadMore = useCallback(() => {
-    const trimmedQuery = query.trim()
-    if (!trimmedQuery || !hasMore || loadingMoreRef.current) return
-
-    loadingMoreRef.current = true
-    setIsLoadingMore(true)
-    const generation = generationRef.current
-    const cursor = results.at(-1)?.sequence ?? 0
-    void searchMessages(chatId, trimmedQuery, SEARCH_PAGE_SIZE, cursor)
-      .then(
-        page => {
-          if (generationRef.current !== generation) return
-          setResults(current => {
-            const existing = new Set(current.map(result => result.sequence))
-            return [...current, ...page.results.filter(result => !existing.has(result.sequence))]
-          })
-          setHasMore(page.hasMore)
-        },
-        searchError => {
-          if (generationRef.current !== generation) return
-          setError(searchError instanceof Error ? searchError.message : 'Search failed')
-        }
+  const loadMore = useCallback(
+    (explicitRetry = false) => {
+      const trimmedQuery = query.trim()
+      if (
+        !trimmedQuery ||
+        !hasMore ||
+        loadingMoreRef.current ||
+        (failureRef.current && !explicitRetry)
       )
-      .finally(() => {
-        if (generationRef.current === generation) setIsLoadingMore(false)
-        loadingMoreRef.current = false
-      })
-  }, [chatId, hasMore, query, results])
+        return
+
+      setError(null)
+      failureRef.current = null
+      loadingMoreRef.current = true
+      setIsLoadingMore(true)
+      const generation = generationRef.current
+      const cursor = results.at(-1)?.sequence ?? 0
+      void searchMessages(chatId, trimmedQuery, SEARCH_PAGE_SIZE, cursor)
+        .then(
+          page => {
+            if (generationRef.current !== generation) return
+            setResults(current => {
+              const existing = new Set(current.map(result => result.sequence))
+              return [...current, ...page.results.filter(result => !existing.has(result.sequence))]
+            })
+            setHasMore(page.hasMore)
+          },
+          searchError => {
+            if (generationRef.current !== generation) return
+            failureRef.current = 'more'
+            setError(searchError instanceof Error ? searchError.message : 'Search failed')
+          }
+        )
+        .finally(() => {
+          if (generationRef.current === generation) {
+            setIsLoadingMore(false)
+            loadingMoreRef.current = false
+          }
+        })
+    },
+    [chatId, hasMore, query, results]
+  )
+
+  const retry = () => {
+    if (failureRef.current === 'more') loadMore(true)
+    else setRetryToken(current => current + 1)
+  }
 
   const renderResult = useCallback(
     ({ item }: { item: MessageSearchResult }) => (
@@ -95,40 +128,43 @@ export function ChatSearch({ chatId, onClose, onSelect }: ChatSearchProps) {
 
   const emptyState = useMemo(() => {
     if (isLoading) return null
-    if (error) return error
     if (!query.trim()) return 'Search messages in this chat'
     return 'No messages found'
-  }, [error, isLoading, query])
+  }, [isLoading, query])
 
   return (
-    <View className='flex-1 bg-[#0B141A]'>
-      <View className='flex-row items-center gap-2 border-b border-white/5 bg-[#202C33] px-3 py-2'>
+    <View className='bg-wa-bg flex-1'>
+      <View className='bg-wa-header flex-row items-center gap-2 border-b border-white/5 px-3 py-2'>
         <Pressable
+          ref={closeRef}
+          accessibilityRole='button'
           accessibilityLabel='Close search'
-          className='size-10 items-center justify-center rounded-full active:bg-white/10'
+          className='size-11 items-center justify-center rounded-full active:bg-white/10'
           onPress={onClose}
         >
-          <Ionicons name='arrow-back' size={24} color='#E9EDEF' />
+          <Ionicons name='arrow-back' size={24} color={colors.textPrimary} />
         </Pressable>
-        <View className='h-11 flex-1 flex-row items-center rounded-full bg-[#2A3942] px-3'>
-          <Ionicons name='search' size={19} color='#8696A0' />
+        <View className='bg-wa-input h-11 flex-1 flex-row items-center rounded-full px-3'>
+          <Ionicons name='search' size={19} color={colors.textSecondary} />
           <TextInput
             autoFocus
+            testID='chat-search-input'
+            accessibilityLabel='Search messages'
             value={query}
             onChangeText={setQuery}
             placeholder='Search messages'
-            placeholderTextColor='#8696A0'
-            selectionColor='#00A884'
+            placeholderTextColor={colors.textSecondary}
+            selectionColor={colors.accent}
             returnKeyType='search'
-            className='ml-2 flex-1 text-[15px] text-[#E9EDEF]'
+            className='text-wa-text-primary ml-2 flex-1 text-[15px]'
           />
           {query.length > 0 && (
             <Pressable
               accessibilityLabel='Clear search'
-              className='size-8 items-center justify-center'
+              className='size-11 items-center justify-center'
               onPress={() => setQuery('')}
             >
-              <Ionicons name='close' size={20} color='#8696A0' />
+              <Ionicons name='close' size={20} color={colors.textSecondary} />
             </Pressable>
           )}
         </View>
@@ -136,7 +172,7 @@ export function ChatSearch({ chatId, onClose, onSelect }: ChatSearchProps) {
 
       {isLoading ? (
         <View className='flex-1 items-center justify-center'>
-          <ActivityIndicator color='#00A884' />
+          <ActivityIndicator color={colors.accent} />
         </View>
       ) : (
         <FlatList
@@ -144,21 +180,27 @@ export function ChatSearch({ chatId, onClose, onSelect }: ChatSearchProps) {
           renderItem={renderResult}
           keyExtractor={item => item.messageId}
           keyboardShouldPersistTaps='handled'
-          onEndReached={loadMore}
+          onEndReached={() => loadMore()}
           onEndReachedThreshold={0.3}
           contentContainerStyle={results.length === 0 ? { flex: 1 } : undefined}
           ListEmptyComponent={
-            emptyState ? (
+            error && results.length === 0 ? (
+              <LoadError message={error} onRetry={retry} />
+            ) : emptyState ? (
               <View className='flex-1 items-center justify-center px-8'>
-                <Ionicons name='search-outline' size={34} color='#667781' />
-                <Text className='mt-3 text-center text-sm text-[#8696A0]'>{emptyState}</Text>
+                <Ionicons name='search-outline' size={34} color={colors.textSecondary} />
+                <Text className='text-wa-text-secondary mt-3 text-center text-sm'>
+                  {emptyState}
+                </Text>
               </View>
             ) : null
           }
           ListFooterComponent={
-            isLoadingMore ? (
+            error && results.length > 0 ? (
+              <LoadError message={error} onRetry={retry} />
+            ) : isLoadingMore ? (
               <View className='items-center py-5'>
-                <ActivityIndicator size='small' color='#00A884' />
+                <ActivityIndicator size='small' color={colors.accent} />
               </View>
             ) : null
           }
@@ -200,13 +242,13 @@ const SearchResultRow = memo(function SearchResultRow({
         <Text className='flex-1 text-[13px] font-medium text-[#00A884]' numberOfLines={1}>
           {result.sender ?? 'System'}
         </Text>
-        <Text className='text-[11px] text-[#8696A0]'>{timestamp}</Text>
+        <Text className='text-wa-text-secondary text-[11px]'>{timestamp}</Text>
       </View>
-      <Text className='text-[14px] leading-5 text-[#D1D7DB]' numberOfLines={3}>
+      <Text className='text-wa-text-primary text-[14px] leading-5' numberOfLines={3}>
         {segments.map((segment, index) => (
           <Text
             key={`${index}-${segment.text}`}
-            className={segment.highlighted ? 'bg-[#00A884]/35 text-[#FFFFFF]' : undefined}
+            className={segment.highlighted ? 'bg-wa-accent/20 text-wa-text-primary' : undefined}
           >
             {segment.text}
           </Text>

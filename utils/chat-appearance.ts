@@ -58,6 +58,8 @@ export type ChatWallpaperId = (typeof CHAT_WALLPAPERS)[number]['id']
 export interface ChatAppearancePreference {
   wallpaper: ChatWallpaperId
   textScale: ChatTextScale
+  /** null follows the app default; undefined supports older in-memory callers. */
+  textScaleOverride?: ChatTextScale | null
   customWallpaperUri: string | null
   wallpaperDimming: ChatWallpaperDimming
 }
@@ -116,4 +118,13 @@ export function getChatTextMetrics(
     fontSize: baseFontSize * scale,
     lineHeight: Math.round(baseLineHeight * scale)
   }
+}
+
+export function resolveChatTextScale(
+  preference: ChatAppearancePreference,
+  appDefault: ChatTextScale
+): ChatTextScale {
+  return preference.textScaleOverride === undefined
+    ? preference.textScale
+    : (preference.textScaleOverride ?? appDefault)
 }
