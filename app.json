@@ -17,9 +17,15 @@
             "CFBundleTypeRole": "Viewer",
             "LSHandlerRank": "Alternate",
             "LSItemContentTypes": ["public.zip-archive", "com.pkware.zip-archive"]
+          },
+          {
+            "CFBundleTypeName": "WhatsApp Chat Transcript",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": ["public.plain-text", "public.utf8-plain-text"]
           }
         ],
-        "LSSupportsOpeningDocumentsInPlace": true
+        "LSSupportsOpeningDocumentsInPlace": false
       }
     },
     "android": {
@@ -50,6 +56,14 @@
             {
               "scheme": "file",
               "mimeType": "application/x-zip-compressed"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "text/plain"
+            },
+            {
+              "scheme": "file",
+              "mimeType": "text/plain"
             }
           ]
         }
@@ -71,7 +85,23 @@
       ],
       "expo-image",
       "expo-asset",
-      "expo-sharing",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "activationRule": "SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.zip-archive\" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO \"com.pkware.zip-archive\" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.plain-text\").@count == 1 AND $item.attachments.@count == 1).@count == 1"
+          },
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": [
+              "application/zip",
+              "application/x-zip-compressed",
+              "text/plain"
+            ]
+          }
+        }
+      ],
       [
         "expo-audio",
         {

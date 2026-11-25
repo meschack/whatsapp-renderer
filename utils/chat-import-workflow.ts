@@ -32,15 +32,19 @@ export interface ChatImportProgress {
   currentItem?: string
 }
 
+export type ChatImportReviewDecision = boolean | { targetChatId: string }
+
 export interface ChatImportRequest {
   temporaryArchiveUri: string
   archiveName: string
   onProgress?: (progress: ChatImportProgress) => void
   signal?: AbortSignal
-  onReview?: (preview: ChatImportPreview) => Awaitable<boolean>
+  onReview?: (preview: ChatImportPreview) => Awaitable<ChatImportReviewDecision>
 }
 
 export interface ChatImportPreview {
+  availableChats?: SavedChat[]
+  manualTarget?: boolean
   repairOnly?: boolean
   outcome: 'imported' | 'updated' | 'up-to-date'
   chatName: string
@@ -85,6 +89,7 @@ export interface ChatImportDependencies {
     candidates: MediaCandidate[],
     signal?: AbortSignal
   ) => Awaitable<string>
+  listSavedChats?: () => Awaitable<SavedChat[]>
   findDuplicate: (fingerprint: string) => Awaitable<SavedChat | null>
   findUpdate: (input: {
     openTranscript: () => AsyncIterable<string>
@@ -158,8 +163,11 @@ function createParsingMediaMap(candidates: MediaCandidate[], indexedMedia: Media
   return mediaMap
 }
 
-async function reviewPlan(request: ChatImportRequest, preview: ChatImportPreview): Promise<void> {
-  if (!request.onReview) return
+async function reviewPlan(
+  request: ChatImportRequest,
+  preview: ChatImportPreview
+): Promise<ChatImportReviewDecision> {
+  if (!request.onReview) return true
   throwIfCancelled(request.signal)
   let abortListener: (() => void) | undefined
   try {
@@ -170,6 +178,7 @@ async function reviewPlan(request: ChatImportRequest, preview: ChatImportPreview
     const accepted = await Promise.race([Promise.resolve(request.onReview(preview)), aborted])
     if (!accepted) throw new ImportCancelledError('Import declined during review')
     throwIfCancelled(request.signal)
+    return accepted
   } finally {
     if (abortListener) request.signal?.removeEventListener('abort', abortListener)
   }
@@ -256,7 +265,7 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
       }
 
       const openTranscript = await dependencies.openTranscript(transcriptUri, request.signal)
-      const update = await dependencies.findUpdate({
+      let update = await dependencies.findUpdate({
         openTranscript,
         mediaCandidates,
         signal: request.signal
@@ -271,11 +280,12 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
         report('complete')
         return { chat: update.chat, outcome: 'up-to-date' }
       }
-      const requiredMedia = update ? new Set(update.mediaFilenames) : null
       const safeMediaCandidates = unambiguousMediaCandidates(mediaCandidates)
-      const mediaToIndex = requiredMedia
-        ? safeMediaCandidates.filter(candidate => requiredMedia.has(candidate.filename))
-        : safeMediaCandidates
+      const getMediaToIndex = () => {
+        if (!update) return safeMediaCandidates
+        const requiredMedia = new Set(update.mediaFilenames)
+        return safeMediaCandidates.filter(candidate => requiredMedia.has(candidate.filename))
+      }
 
       if (request.onReview) {
         report('reviewing')
@@ -287,18 +297,36 @@ export function createChatImporter(dependencies: ChatImportDependencies) {
           request.signal
         )
         if (metadata.messageCount === 0) throw new Error('No messages found in the chat file.')
-        await reviewPlan(request, {
+        const availableChats = !update ? ((await dependencies.listSavedChats?.()) ?? []) : []
+        throwIfCancelled(request.signal)
+        const preview = (): ChatImportPreview => ({
           outcome: update ? 'updated' : 'imported',
           chatName: update?.chat.chatName ?? importedChatName,
           targetChat: update?.chat ?? null,
+          manualTarget: update?.mode === 'manual',
           messageCount: metadata.messageCount,
           newMessageCount: update?.newMessageCount ?? metadata.messageCount,
-          mediaCount: mediaToIndex.length,
+          mediaCount: getMediaToIndex().length,
           ambiguousMedia,
           ambiguousDateCount: metadata.diagnostics.counts['ambiguous-dates'],
           reconciliation: update?.mode === 'reconcile-latest'
         })
+        const decision = await reviewPlan(request, { ...preview(), availableChats })
+        if (typeof decision === 'object') {
+          const selected = availableChats.find(chat => chat.id === decision.targetChatId)
+          if (!selected) throw new Error('The selected chat is no longer available.')
+          update = {
+            chat: selected,
+            mode: 'manual',
+            skipMessageCount: 0,
+            newMessageCount: metadata.messageCount,
+            mediaFilenames: safeMediaCandidates.map(candidate => candidate.filename)
+          }
+          const confirmation = await reviewPlan(request, preview())
+          if (confirmation !== true) throw new ImportCancelledError()
+        }
       }
+      const mediaToIndex = getMediaToIndex()
       throwIfCancelled(request.signal)
       completed = 3
       report('indexing-media')

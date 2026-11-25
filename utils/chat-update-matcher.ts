@@ -11,7 +11,7 @@ export interface ChatUpdateCandidate {
 
 export interface ChatUpdateMatch {
   chat: SavedChat
-  mode: 'append' | 'reconcile-latest'
+  mode: 'append' | 'reconcile-latest' | 'manual'
   skipMessageCount: number
   newMessageCount: number
   mediaFilenames: string[]

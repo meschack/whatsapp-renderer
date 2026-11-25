@@ -446,6 +446,95 @@ describe('chat import workflow', () => {
 
 describe('import planning and cancellation', () => {
   const request = { temporaryArchiveUri: 'file:///cache/review.zip', archiveName: 'Alice.zip' }
+  const selectedChat: SavedChat = {
+    id: 'masha',
+    chatName: 'Masha',
+    myName: 'Me',
+    participants: ['Me', 'Masha'],
+    extractDirUri: 'file:///saved/masha',
+    messageCount: 10,
+    lastMessageText: 'Hi',
+    lastMessageTime: '2026-08-23T10:00:00Z',
+    importedAt: '2026-08-23T10:00:00Z'
+  }
+  function manualHarness() {
+    let indexed = false
+    const harness = createHarness({
+      listSavedChats: () => [selectedChat],
+      openTranscript: () =>
+        async function* () {
+          yield '23/08/26, 10:00 - Masha: Hello\n'
+        },
+      indexMedia: async () => {
+        indexed = true
+        return new Map()
+      },
+      parseTranscript: input => {
+        expect(input.myName).toBe('Me')
+        expect(input.skipMessageCount).toBe(0)
+        return { messageCount: 1, participants: ['Masha'] }
+      },
+      mergeChat: (existing, _staged, match) => {
+        expect(match.mode).toBe('manual')
+        return existing
+      }
+    })
+    return { ...harness, indexed: () => indexed }
+  }
+  it('offers saved chats only for unmatched imports and confirms the chosen target before writes', async () => {
+    const harness = manualHarness()
+    const plans: import('../utils/chat-import-workflow').ChatImportPreview[] = []
+    const result = await harness.importChat({
+      ...request,
+      archiveName: 'Masha-2.zip',
+      onReview: preview => {
+        plans.push(preview)
+        expect(harness.indexed()).toBe(false)
+        return plans.length === 1 ? { targetChatId: 'masha' } : true
+      }
+    })
+    expect(plans[0]).toMatchObject({ targetChat: null, availableChats: [selectedChat] })
+    expect(plans[1]).toMatchObject({
+      targetChat: selectedChat,
+      manualTarget: true,
+      outcome: 'updated'
+    })
+    expect(plans[1].availableChats).toBeUndefined()
+    expect(result).toEqual({ chat: selectedChat, outcome: 'updated' })
+    expect(harness.savedChats.size).toBe(0)
+  })
+  it('allows declining a chosen target without touching saved history', async () => {
+    const harness = manualHarness()
+    let reviews = 0
+    await expect(
+      harness.importChat({
+        ...request,
+        onReview: () => (++reviews === 1 ? { targetChatId: 'masha' } : false)
+      })
+    ).rejects.toBeInstanceOf(ImportCancelledError)
+    expect(harness.indexed()).toBe(false)
+    expect(harness.cleanedDirectories).toHaveLength(1)
+  })
+  it('rejects a target that was not offered', async () => {
+    const harness = manualHarness()
+    await expect(
+      harness.importChat({ ...request, onReview: () => ({ targetChatId: 'missing' }) })
+    ).rejects.toThrow('no longer available')
+    expect(harness.indexed()).toBe(false)
+  })
+  it('still lets the user create a separate chat', async () => {
+    const harness = createHarness({
+      listSavedChats: () => [selectedChat],
+      openTranscript: () =>
+        async function* () {
+          yield '23/08/26, 10:00 - Masha: Hello\n'
+        }
+    })
+    expect((await harness.importChat({ ...request, onReview: () => true })).outcome).toBe(
+      'imported'
+    )
+  })
+
   it('awaits review before indexing or writing and describes date/media ambiguity', async () => {
     let approve!: (accepted: boolean) => void
     let preview: import('../utils/chat-import-workflow').ChatImportPreview | undefined

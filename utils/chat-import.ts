@@ -19,6 +19,7 @@ export const importChat = createChatImporter({
   extractArchive: extractZip,
   discoverArchive: discoverChatArchive,
   fingerprintArchive,
+  listSavedChats: getAllSavedChats,
   findDuplicate: getSavedChatByFingerprint,
   findUpdate: ({ openTranscript, mediaCandidates, signal }) => {
     const candidates = getAllSavedChats()

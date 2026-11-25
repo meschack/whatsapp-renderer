@@ -1,3 +1,4 @@
+import { mergeManuallySelectedChat } from './manual-chat-merge'
 import type { SavedChat } from '../models/types'
 import type { ChatUpdateMatch } from '../utils/chat-update-matcher'
 import { parseImportDiagnostics } from '../utils/import-diagnostics'
@@ -209,7 +210,11 @@ export function mergeSavedChatUpdate(
       db.runSync('DELETE FROM messages WHERE id = ?', correctedLatest.id)
     }
 
-    db.runSync('UPDATE messages SET chatId = ? WHERE chatId = ?', existing.id, staged.id)
+    if (match.mode === 'manual') {
+      mergeManuallySelectedChat(db, existing.id, staged.id)
+    } else {
+      db.runSync('UPDATE messages SET chatId = ? WHERE chatId = ?', existing.id, staged.id)
+    }
     messageCount =
       db.getFirstSync<{ count: number }>(
         'SELECT COUNT(*) AS count FROM messages WHERE chatId = ?',
@@ -241,7 +246,7 @@ export function mergeSavedChatUpdate(
          participants = ?, extractDirUri = ?, messageCount = ?, lastMessageText = ?,
          lastMessageTime = ?, importedAt = ?, archiveFingerprint = ?, importDiagnostics = ?
        WHERE id = ?`,
-      JSON.stringify(staged.participants),
+      JSON.stringify([...new Set([...existing.participants, ...staged.participants])]),
       staged.extractDirUri,
       messageCount,
       lastMessage?.text ?? null,
@@ -262,7 +267,7 @@ export function mergeSavedChatUpdate(
 
   return {
     ...existing,
-    participants: staged.participants,
+    participants: [...new Set([...existing.participants, ...staged.participants])],
     extractDirUri: staged.extractDirUri,
     messageCount,
     lastMessageText: lastMessage?.text ?? null,

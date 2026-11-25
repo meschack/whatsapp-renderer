@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatImportPreview } from '@/utils/chat-import-workflow'
+import type { ChatImportPreview, ChatImportReviewDecision } from '@/utils/chat-import-workflow'
 
 export function useImportReview() {
   const [preview, setPreview] = useState<ChatImportPreview | null>(null)
-  const pending = useRef<((accepted: boolean) => void) | null>(null)
-  const respond = useCallback((accepted: boolean) => pending.current?.(accepted), [])
+  const pending = useRef<((accepted: ChatImportReviewDecision) => void) | null>(null)
+  const respond = useCallback(
+    (accepted: ChatImportReviewDecision) => pending.current?.(accepted),
+    []
+  )
   const requestReview = useCallback((next: ChatImportPreview, signal?: AbortSignal) => {
     pending.current?.(false)
     if (signal?.aborted) return Promise.resolve(false)
-    return new Promise<boolean>(resolve => {
+    return new Promise<ChatImportReviewDecision>(resolve => {
       const abort = () => finish(false)
-      const finish = (accepted: boolean) => {
+      const finish = (accepted: ChatImportReviewDecision) => {
         signal?.removeEventListener('abort', abort)
         pending.current = null
         setPreview(null)

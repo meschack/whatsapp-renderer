@@ -33,6 +33,7 @@ import { getChatLibrarySections } from '@/utils/chat-library'
 import { ChatActionsSheet } from '@/components/home/chat-actions-sheet'
 import {
   getIncomingArchiveName,
+  INCOMING_ARCHIVE_ERROR_PARAM,
   INCOMING_ARCHIVE_PARAM,
   INCOMING_ARCHIVE_REQUEST_PARAM
 } from '@/utils/incoming-archive'
@@ -71,6 +72,7 @@ export default function HomeScreen() {
   const layout = getAdaptiveLayout(dimensions.width, dimensions.height, 'library')
   const { preview, requestReview, respond } = useImportReview()
   const incomingParams = useLocalSearchParams<{
+    [INCOMING_ARCHIVE_ERROR_PARAM]?: string | string[]
     [INCOMING_ARCHIVE_PARAM]?: string | string[]
     [INCOMING_ARCHIVE_REQUEST_PARAM]?: string | string[]
   }>()
@@ -193,13 +195,19 @@ export default function HomeScreen() {
     async (repairChat?: SavedChat) => {
       try {
         const result = await DocumentPicker.getDocumentAsync({
-          type: 'application/zip',
+          type: ['application/zip', 'application/x-zip-compressed', 'text/plain'],
           copyToCacheDirectory: true
         })
         const pickedFile = result.canceled ? null : result.assets[0]
         if (!pickedFile || !mounted.current) return
 
-        await runImport({ uri: pickedFile.uri, name: pickedFile.name ?? 'Chat.zip', repairChat })
+        await runImport({
+          uri: pickedFile.uri,
+          name: pickedFile.name ?? 'Chat.zip',
+          repairChat,
+          needsStaging:
+            pickedFile.name?.toLowerCase().endsWith('.txt') || pickedFile.mimeType === 'text/plain'
+        })
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'An unknown error occurred'
         Alert.alert('Import Error', message)
@@ -207,6 +215,14 @@ export default function HomeScreen() {
     },
     [runImport]
   )
+
+  const incomingError = incomingParams[INCOMING_ARCHIVE_ERROR_PARAM]
+  const incomingErrorMessage = Array.isArray(incomingError) ? incomingError[0] : incomingError
+  useEffect(() => {
+    if (!incomingErrorMessage) return
+    Alert.alert('Unable to open export', incomingErrorMessage)
+    router.replace('/')
+  }, [incomingErrorMessage, router])
 
   const incomingArchive = incomingParams[INCOMING_ARCHIVE_PARAM]
   const incomingArchiveUri = Array.isArray(incomingArchive) ? incomingArchive[0] : incomingArchive
@@ -373,6 +389,7 @@ export default function HomeScreen() {
         {preview ? (
           <ImportReview
             preview={preview}
+            onChooseChat={targetChatId => respond({ targetChatId })}
             onAccept={() => respond(true)}
             onCancel={() => respond(false)}
           />
